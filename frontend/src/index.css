@@ -1,0 +1,122 @@
+@import "tailwindcss";
+@import "@fontsource-variable/bricolage-grotesque";
+@import "@fontsource-variable/plus-jakarta-sans";
+
+:root, [data-theme="dark"] {
+  --bg: #0D1120;
+  --surface: #141A2E;
+  --surface-2: #1A2139;
+  --raised: #212A47;
+  --line: #262F4F;
+  --line-soft: #1E2642;
+  --text: #ECEFF7;
+  --muted: #98A0BB;
+  --faint: #626B8C;
+  --accent: #F2B53A;
+  --accent-ink: #1C1405;
+  --accent-soft: rgba(242, 181, 58, 0.14);
+  --mint: #3FD9A0;
+  --mint-soft: rgba(63, 217, 160, 0.13);
+  --coral: #FF7A6B;
+  --coral-soft: rgba(255, 122, 107, 0.14);
+  --sky: #74A9FF;
+  --violet: #AE93FF;
+  --shadow: 0 1px 0 rgba(255,255,255,0.03) inset, 0 20px 40px -24px rgba(0,0,0,0.6);
+  color-scheme: dark;
+}
+[data-theme="light"] {
+  --bg: #EDF0F7;
+  --surface: #FFFFFF;
+  --surface-2: #F5F7FC;
+  --raised: #EBEEF7;
+  --line: #DCE1EE;
+  --line-soft: #E8ECF5;
+  --text: #121832;
+  --muted: #58617F;
+  --faint: #8A92AE;
+  --accent: #C98A0E;
+  --accent-ink: #FFFFFF;
+  --accent-soft: rgba(201, 138, 14, 0.12);
+  --mint: #0C9A6A;
+  --mint-soft: rgba(12, 154, 106, 0.1);
+  --coral: #DC4A3A;
+  --coral-soft: rgba(220, 74, 58, 0.1);
+  --sky: #2F6FE0;
+  --violet: #7B55E8;
+  --shadow: 0 1px 2px rgba(18,24,50,0.04), 0 16px 32px -24px rgba(18,24,50,0.25);
+  color-scheme: light;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-raised: var(--raised);
+  --color-line: var(--line);
+  --color-line-soft: var(--line-soft);
+  --color-text: var(--text);
+  --color-muted: var(--muted);
+  --color-faint: var(--faint);
+  --color-accent: var(--accent);
+  --color-accent-ink: var(--accent-ink);
+  --color-accent-soft: var(--accent-soft);
+  --color-mint: var(--mint);
+  --color-mint-soft: var(--mint-soft);
+  --color-coral: var(--coral);
+  --color-coral-soft: var(--coral-soft);
+  --color-sky: var(--sky);
+  --color-violet: var(--violet);
+  --font-sans: "Plus Jakarta Sans Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Bricolage Grotesque Variable", "Plus Jakarta Sans Variable", ui-sans-serif, sans-serif;
+  --shadow-card: var(--shadow);
+}
+
+html, body, #root { height: 100%; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: 15px;
+  -webkit-font-smoothing: antialiased;
+  transition: background-color .3s ease, color .3s ease;
+}
+.num { font-variant-numeric: tabular-nums; font-feature-settings: "tnum"; }
+.display { font-family: var(--font-display); font-variation-settings: "wdth" 88; letter-spacing: -0.02em; }
+
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 8px; }
+::selection { background: var(--accent-soft); }
+
+/* scrollbars */
+* { scrollbar-width: thin; scrollbar-color: var(--line) transparent; }
+
+/* subtle paper grain on the canvas, gives depth without gradients */
+.grain::before {
+  content: ""; position: fixed; inset: 0; pointer-events: none; z-index: 0; opacity: .035;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+.skeleton {
+  background: linear-gradient(90deg, var(--surface-2) 0%, var(--raised) 50%, var(--surface-2) 100%);
+  background-size: 200% 100%; animation: shimmer 1.4s ease-in-out infinite; border-radius: 10px;
+}
+@keyframes shimmer { from { background-position: 200% 0 } to { background-position: -200% 0 } }
+
+.live-dot { position: relative; }
+.live-dot::after {
+  content: ""; position: absolute; inset: -4px; border-radius: 999px; background: var(--mint);
+  opacity: .45; animation: ping 1.6s cubic-bezier(0,0,.2,1) infinite;
+}
+@keyframes ping { 75%, 100% { transform: scale(2.2); opacity: 0; } }
+
+/* striped fill used for "projected" portions of meters */
+.hatch {
+  background-image: repeating-linear-gradient(-45deg, currentColor 0 2px, transparent 2px 7px);
+  opacity: .45;
+}
+
+.recharts-tooltip-cursor { fill: var(--raised); opacity: .5; }
+.recharts-text { fill: var(--faint); font-size: 12px; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}
