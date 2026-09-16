@@ -1,7 +1,10 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
-import { AnimatePresence, motion } from "motion/react";
-import { LayoutDashboard, ListOrdered, PiggyBank, Lightbulb, Activity, Plus, Moon, Sun, LogOut, Upload } from "lucide-react";
+import { motion } from "motion/react";
+import PageBoundary from "./PageBoundary";
+import { LayoutDashboard, ListOrdered, PiggyBank, Lightbulb, Activity, Plus, Moon, Sun, LogOut, Upload, Target, Sparkles, LayoutGrid } from "lucide-react";
+import Notifications from "./Notifications";
+import Modal from "./Modal";
 import clsx from "clsx";
 import { useAuth } from "./Auth";
 import { Button, IconButton } from "./ui";
@@ -12,7 +15,9 @@ import Logo from "./Logo";
 const NAV = [
   { to: "/", label: "Overview", icon: LayoutDashboard, end: true },
   { to: "/transactions", label: "Transactions", icon: ListOrdered },
+  { to: "/assistant", label: "Assistant", icon: Sparkles },
   { to: "/budgets", label: "Budgets", icon: PiggyBank },
+  { to: "/goals", label: "Goals", icon: Target },
   { to: "/insights", label: "Insights", icon: Lightbulb },
   { to: "/metrics", label: "Metrics", icon: Activity },
 ];
@@ -35,6 +40,7 @@ export default function Layout() {
   const location = useLocation();
   const [add, setAdd] = useState({ open: false, editing: null });
   const [importing, setImporting] = useState(false);
+  const [more, setMore] = useState(false);
   const actions = { addTxn: () => setAdd({ open: true, editing: null }), editTxn: (t) => setAdd({ open: true, editing: t }), importCsv: () => setImporting(true) };
 
   useEffect(() => {
@@ -86,6 +92,7 @@ export default function Layout() {
         <header className="sticky top-0 z-30 flex items-center justify-between border-b border-line-soft bg-bg/85 px-4 py-3 backdrop-blur lg:hidden">
           <Logo compact />
           <div className="flex items-center gap-1">
+            <Notifications />
             <ThemeToggle />
             <IconButton icon={Upload} label="Import CSV" onClick={actions.importCsv} />
             <IconButton icon={LogOut} label="Sign out" onClick={logout} />
@@ -93,14 +100,14 @@ export default function Layout() {
         </header>
 
         <div className="relative z-10 lg:pl-[244px]">
-          <div className="absolute right-6 top-6 hidden lg:block"><ThemeToggle /></div>
+          <div className="absolute right-6 top-6 z-20 hidden items-center gap-1 lg:flex"><Notifications /><ThemeToggle /></div>
           <main className="mx-auto max-w-[1320px] px-4 pb-28 pt-6 sm:px-6 lg:px-10 lg:pb-12 lg:pt-8">
-            <AnimatePresence mode="wait">
-              <motion.div key={location.pathname} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
-                transition={{ duration: 0.22, ease: "easeOut" }}>
-                <Outlet />
-              </motion.div>
-            </AnimatePresence>
+            {/* Enter-only transition. An exit-wait (AnimatePresence mode="wait") around <Outlet/> could
+                get stuck in dev/StrictMode and leave the page blank until a refresh. */}
+            <motion.div key={location.pathname} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.22, ease: "easeOut" }}>
+              <PageBoundary key={location.pathname}><Outlet /></PageBoundary>
+            </motion.div>
           </main>
         </div>
 
@@ -109,11 +116,25 @@ export default function Layout() {
           {NAV.slice(0, 2).map((n) => <MobileLink key={n.to} {...n} />)}
           <motion.button whileTap={{ scale: 0.9 }} onClick={actions.addTxn} aria-label="Add transaction"
             className="grid h-11 w-11 place-items-center rounded-2xl bg-accent text-accent-ink"><Plus size={22} /></motion.button>
-          {NAV.slice(2, 5).map((n) => <MobileLink key={n.to} {...n} />)}
+          <MobileLink {...NAV[2]} />
+          <button onClick={() => setMore(true)} className={clsx("flex flex-col items-center gap-0.5 rounded-xl px-2 py-1 text-[10px] font-semibold",
+            NAV.slice(3).some((n) => location.pathname.startsWith(n.to)) ? "text-accent" : "text-faint")}>
+            <LayoutGrid size={19} />More
+          </button>
         </nav>
 
         <AddTransaction open={add.open} editing={add.editing} onClose={() => setAdd({ open: false, editing: null })} />
         <ImportCsv open={importing} onClose={() => setImporting(false)} />
+        <Modal open={more} onClose={() => setMore(false)} title="More" width={420}>
+          <div className="grid grid-cols-2 gap-2">
+            {NAV.slice(3).map(({ to, label, icon: Icon }) => (
+              <NavLink key={to} to={to} onClick={() => setMore(false)} className={({ isActive }) => clsx("flex items-center gap-3 rounded-2xl border px-4 py-4 font-semibold",
+                isActive ? "border-accent bg-accent-soft text-accent" : "border-line-soft bg-surface-2 text-text")}>
+                <Icon size={19} />{label}
+              </NavLink>
+            ))}
+          </div>
+        </Modal>
       </div>
     </ActionsCtx.Provider>
   );

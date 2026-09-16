@@ -60,7 +60,13 @@ function ReviewCard({ live, models, load }) {
     { name: "Anomaly recall", target: "≥ 75%", value: `${b.anomaly.recall}%`, pass: b.anomaly.recall >= 75 },
     { name: "CSV import, 500 rows", target: "< 3 s", value: ms(b.csv_500?.ms), pass: (b.csv_500?.ms ?? 1e9) < 3000 },
     { name: "Dashboard API response", target: "< 500 ms", value: dash !== null ? ms(dash) : "Open Overview", pass: dash === null ? null : dash < 500, note: dash !== null ? "live average" : "no calls in window yet" },
-    { name: "AI assistant response", target: "< 5 s", value: "Version 2", pass: null, note: "assistant ships next phase" },
+    (() => {
+      const a = models.assistant;
+      if (!a?.count) return { name: "AI assistant response", target: "< 5 s", value: "Ask it something", pass: null, note: "no replies measured yet" };
+      const v = a.llm_count ? a.llm_avg_ms : a.avg_ms;
+      return { name: "AI assistant response", target: "< 5 s", value: ms(v), pass: a.llm_count ? v < 5000 : null,
+        note: a.llm_count ? `${a.llm_count} LLM replies, average` : "offline engine only; add an LLM key to measure" };
+    })(),
   ] : null;
   const passed = rows?.filter((r) => r.pass).length;
   const measured = rows?.filter((r) => r.pass !== null).length;

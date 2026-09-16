@@ -220,7 +220,7 @@ export function useMediaQuery(q) {
 
 export function PageHeader({ title, subtitle, actions }) {
   return (
-    <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between lg:mb-8 lg:pr-14">
+    <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between lg:mb-8 lg:pr-24">
       <div>
         <h1 className="display text-[2rem] font-semibold leading-[1.05] sm:text-[2.5rem]">{title}</h1>
         {subtitle && <p className="mt-2 max-w-[62ch] text-[15px] text-muted">{subtitle}</p>}

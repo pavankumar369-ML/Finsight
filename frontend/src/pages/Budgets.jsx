@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { Check, PiggyBank, Plus, Trash2, X } from "lucide-react";
+import { CalendarClock, Check, PiggyBank, Plus, Repeat, Trash2, X } from "lucide-react";
 import clsx from "clsx";
 import { api, dataChanged } from "../lib/api";
 import { useApi } from "../lib/hooks";
@@ -52,6 +52,8 @@ export default function Budgets() {
           <AnimatePresence>{list.map((b) => <BudgetCard key={b.id} b={b} day={data.day} days={data.days} onChanged={reload} />)}</AnimatePresence>
         </motion.div>
       )}
+
+      <RecurringCard />
 
       {data?.unbudgeted?.length > 0 && (
         <Card className="mt-5 p-5 sm:p-6">
@@ -158,5 +160,40 @@ function NewBudget({ open, onClose, options, onSaved }) {
         <div className="flex justify-end gap-2"><Button type="button" variant="ghost" onClick={onClose}>Cancel</Button><Button type="submit" loading={busy}>Create budget</Button></div>
       </form>
     </Modal>
+  );
+}
+
+
+function RecurringCard() {
+  const { data } = useApi("/recurring");
+  if (!data) return <Skeleton className="mt-5 h-40 rounded-[20px]" />;
+  const due = (d) => d === 0 ? "Due today" : d === 1 ? "Due tomorrow" : d < 0 ? "Overdue" : `In ${d} days`;
+  return (
+    <Card className="mt-5 p-5 sm:p-6">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="display text-lg font-semibold">Recurring bills</h2>
+          <p className="text-[13px] text-muted">Detected from payments that repeat about once a month with a steady amount.</p>
+        </div>
+        {data.items.length > 0 && <p className="text-right"><span className="display num text-2xl font-semibold">{money(data.monthly_total)}</span><span className="block text-[12px] text-faint">a month</span></p>}
+      </div>
+      {data.items.length === 0 ? (
+        <p className="mt-4 flex items-center gap-2 text-sm text-muted"><Repeat size={16} />Nothing recurring yet. It needs about three months of history.</p>
+      ) : (
+        <ul className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+          {data.items.map((r, i) => (
+            <motion.li key={r.merchant + r.category} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.04 }}
+              className="flex items-center gap-3 rounded-2xl border border-line-soft bg-surface-2 p-3">
+              <CategoryIcon category={r.category} size={38} />
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-[14px] font-semibold">{r.merchant}</p>
+                <p className={clsx("flex items-center gap-1 text-[12px]", r.days_until <= 3 ? "text-accent" : "text-faint")}><CalendarClock size={12} />{due(r.days_until)} · {r.months} months seen</p>
+              </div>
+              <p className="num text-right font-semibold">{r.variable && <span className="text-[11px] font-normal text-faint">~</span>}{money(r.amount)}</p>
+            </motion.li>
+          ))}
+        </ul>
+      )}
+    </Card>
   );
 }

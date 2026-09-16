@@ -123,3 +123,75 @@ def test_forecast_cache_invalidates_on_write(client, user):
     after = client.get("/api/insights", headers=user).json()
     assert client.get("/api/dashboard", headers=user).json()["counts"]["transactions"] == before + 1
     assert any(h["month"] == "2026-07" for h in after["forecast"]["history"])
+
+
+def test_goals_crud_and_projection(client, user):
+    r = client.post("/api/goals", headers=user, json={"name": "Bike", "target": 60000, "saved": 10000, "emoji": "🏍️"})
+    gid = r.json()["id"]
+    assert client.post(f"/api/goals/{gid}/contribute", headers=user, json={"amount": 5000}).json()["saved"] == 15000
+    assert client.post(f"/api/goals/{gid}/contribute", headers=user, json={"amount": -99999}).status_code == 422
+    g = next(x for x in client.get("/api/goals", headers=user).json()["goals"] if x["id"] == gid)
+    assert g["remaining"] == 45000 and 0 < g["progress"] < 1
+    assert client.post("/api/goals", headers=user, json={"name": "X", "target": 0}).status_code == 422
+    assert client.delete(f"/api/goals/{gid}", headers=user).status_code == 204
+
+
+def test_goal_privacy(client, user, demo):
+    gid = client.get("/api/goals", headers=demo).json()["goals"][0]["id"]
+    assert client.post(f"/api/goals/{gid}/contribute", headers=user, json={"amount": 1}).status_code == 404
+
+
+def test_recurring_and_notifications(client, demo):
+    rec = client.get("/api/recurring", headers=demo).json()
+    merchants = {i["merchant"].lower() for i in rec["items"]}
+    assert "netflix" in merchants and "spotify" in merchants
+    assert not any("swiggy" in m for m in merchants)          # frequent merchants aren't bills
+    notes = client.get("/api/notifications", headers=demo).json()["items"]
+    assert notes and all({"id", "tone", "title", "body", "link"} <= n.keys() for n in notes)
+    assert len({n["id"] for n in notes}) == len(notes)
+
+
+def test_assistant_offline_answers_from_data(client, demo):
+    r = client.post("/api/assistant/chat", headers=demo, json={"message": "How much did I spend on food last month?"}).json()
+    assert r["assistant"]["mode"] == "offline" and "Food" in r["assistant"]["content"] and "₹" in r["assistant"]["content"]
+    assert r["assistant"]["ms"] is not None
+    hist = client.get("/api/assistant/history", headers=demo).json()["messages"]
+    assert hist[-1]["role"] == "assistant" and hist[-2]["role"] == "user"
+    m = client.get("/api/metrics/models", headers=demo).json()["assistant"]
+    assert m["count"] >= 1 and m["avg_ms"] >= 0
+
+
+def test_assistant_empty_account(client, user):
+    client.delete("/api/assistant/history", headers=user)
+    fresh = client.post("/api/auth/register", json={"name": "Empty One", "email": "empty@example.com", "password": "secret12"}).json()
+    h = {"Authorization": "Bearer " + fresh["token"]}
+    r = client.post("/api/assistant/chat", headers=h, json={"message": "am I over budget?"}).json()
+    assert "import" in r["assistant"]["content"].lower()
+    for path in ["/api/goals", "/api/recurring", "/api/notifications", "/api/insights", "/api/budgets", "/api/metrics/models"]:
+        assert client.get(path, headers=h).status_code == 200, path
+
+
+def test_assistant_llm_path_and_fallback(client, demo, monkeypatch):
+    from app import assistant as AI
+    seen = {}
+
+    def fake_llm(question, context, history):
+        seen["ctx"] = context
+        return "You spent **₹7,399** on food last month."
+    monkeypatch.setattr(AI, "LLM_API_KEY", "test-key")
+    monkeypatch.setattr(AI, "ask_llm", fake_llm)
+    r = client.post("/api/assistant/chat", headers=demo, json={"message": "food last month?"}).json()
+    assert r["assistant"]["mode"] == "llm" and "budgets" in seen["ctx"] and seen["ctx"]["transaction_count"] > 100
+
+    def broken(*a):
+        raise TimeoutError("api down")
+    monkeypatch.setattr(AI, "ask_llm", broken)
+    r = client.post("/api/assistant/chat", headers=demo, json={"message": "food last month?"}).json()
+    assert r["assistant"]["mode"] == "offline" and r["fallback_reason"] == "TimeoutError"
+
+
+def test_export_csv(client, demo):
+    r = client.get("/api/transactions/export?type=income", headers=demo)
+    assert r.status_code == 200 and "text/csv" in r.headers["content-type"]
+    lines = r.text.strip().splitlines()
+    assert lines[0].lstrip("\ufeff").startswith("Date,Description") and all(",income," in l for l in lines[1:])

@@ -1,6 +1,6 @@
 # FinSight — AI-powered Personal Finance Management System
 
-**Version 1 (Phase 1).** React + FastAPI + scikit-learn. Imports bank statements, auto-categorises UPI/POS/NEFT transactions, forecasts next month's spending, flags unusual spends and scores financial health. A live **Metrics** page measures the running system against the targets in the project document.
+**Version 2 (Phase 2).** React + FastAPI + scikit-learn, with an AI finance assistant. Imports bank statements, auto-categorises UPI/POS/NEFT transactions, forecasts next month's spending, flags unusual spends and scores financial health. A live **Metrics** page measures the running system against the targets in the project document.
 
 ## Run it locally
 
@@ -25,7 +25,10 @@ npm run dev
 ```
 Open **http://localhost:5173** and click **Explore with 6 months of demo data**, or sign in with `demo@finsight.app` / `demo1234`.
 
-**3. Tests**
+**3. Optional: connect a real LLM to the assistant**
+The assistant works out of the box in offline mode (answers computed from your data). For open-ended conversation, copy `backend/.env.example` to `backend/.env`, paste a free API key (Groq or Gemini), and restart the backend. The Assistant page then shows the model name, and the Metrics page measures real LLM response time.
+
+**4. Tests**
 ```bash
 cd backend
 pytest -q
@@ -42,6 +45,11 @@ pytest -q
 | Budgets | Per-category limits, inline editing, projection that blends pace with the forecast (fixed bills handled separately), daily allowance |
 | Insights | Holt-Winters forecast per category with backtest error, trend chart, 50/30/20 check, generated tips, anomaly list with reasons |
 | Metrics | Document targets vs live values, request latency p50/p95/p99, throughput, status codes, per-endpoint table, in-browser load test, model accuracy/F1, confusion matrix, per-class F1, confidence histogram, retrain with user corrections, forecaster and anomaly benchmarks |
+| **AI assistant (v2)** | Chat grounded in your own data (months, categories, budgets, goals, forecast, bills, anomalies). Uses any OpenAI-compatible LLM (Groq, Gemini, OpenAI); falls back to a built-in offline engine if no key is set or the API fails. Every reply is timed |
+| **Savings goals (v2)** | Goals with emoji, target, deadline; quick add/withdraw; finish-date projection from your average monthly savings; required monthly amount for deadlines |
+| **Recurring bills (v2)** | Detects subscriptions and bills (3+ months, ~monthly gap, stable amount, not everyday merchants); next due date and monthly total |
+| **Notifications (v2)** | Bell with unread count: budget overruns, bills due within 7 days, unusual spends, goal milestones |
+| **Export (v2)** | Download the filtered transaction list as CSV |
 | UI | Dark and light themes, responsive down to phones, keyboard shortcut **N** to add a transaction, reduced-motion support |
 
 ## ML components
@@ -62,7 +70,7 @@ pytest -q
 | Anomaly precision / recall | ≥ 80% / ≥ 75% | 92% / 92% |
 | CSV import + categorise, 500 rows | < 3 s | ~20–60 ms |
 | Dashboard API response (60-request load test) | < 500 ms | ~114 ms avg |
-| AI assistant response | < 5 s | Version 2 |
+| AI assistant response | < 5 s | Offline engine < 1 ms; LLM mode measured live on the Metrics page |
 
 Exact values vary slightly by machine; the Metrics page shows the live numbers.
 
@@ -74,10 +82,11 @@ backend/
     db.py  auth.py  schemas.py  seed.py  services.py  metrics_store.py
     ml/                  dataset, categorizer, analytics (forecast, anomalies, health), benchmarks
     routers/             auth, transactions (+CSV), analytics (dashboard, budgets, insights), metrics
-  tests/test_api.py      14 API tests
+    assistant.py         LLM client, data context builder, offline answer engine
+  tests/test_api.py      21 API tests (incl. mocked LLM and LLM-failure fallback)
 frontend/
   src/
-    pages/               Login, Dashboard, Transactions, Budgets, Insights, Metrics
+    pages/               Login, Dashboard, Transactions, Assistant, Budgets, Goals, Insights, Metrics
     components/          UI kit, Layout, modals, toasts, CSV import, category picker
     lib/                 api client, hooks, formatting, category colours/icons
 ```
@@ -95,6 +104,14 @@ frontend/
 | No edit/delete on mobile | Rows open the edit sheet; delete added inside it |
 | Toasts rendered behind modal backdrop | Toasts moved to a portal above modals |
 
+## Phase 2 test log
+
+| Found in testing | Fix |
+|---|---|
+| Budgets, Insights and Metrics went blank when opened by clicking in the sidebar (worked after refresh; then Overview/Transactions went blank). The page transition waited for the old page's exit animation, which could stall in dev mode | Enter-only page transition plus an error boundary per page, so a page can never render blank silently. Verified by clicking through all pages 11 times on a demo and a brand-new account |
+| Assistant showed ISO dates ("2026-10-05") | Friendly dates ("5 Oct") |
+| Double focus ring on the chat input | Removed the inner outline |
+
 ## Roadmap
-- **Phase 2 (v2):** AI finance assistant (LLM chat grounded in your data, measured response time), savings goals, recurring bill detection, notifications, CSV/PDF export.
-- **Phase 3 (v3):** deployment, auth hardening (refresh tokens, rate limiting), Postgres option, performance and accessibility audit, mobile polish.
+- ✅ **Phase 2 (v2):** AI assistant, savings goals, recurring bills, notifications, CSV export.
+- **Next:** deployment, auth hardening (refresh tokens, rate limiting), Postgres option, performance and accessibility audit, mobile polish.

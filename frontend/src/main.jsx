@@ -12,6 +12,8 @@ import Transactions from "./pages/Transactions";
 import Budgets from "./pages/Budgets";
 import Insights from "./pages/Insights";
 import Metrics from "./pages/Metrics";
+import Goals from "./pages/Goals";
+import Assistant from "./pages/Assistant";
 
 function Protected({ children }) {
   const { user, ready } = useAuth();
@@ -33,6 +35,8 @@ ReactDOM.createRoot(document.getElementById("root")).render(
                 <Route path="budgets" element={<Budgets />} />
                 <Route path="insights" element={<Insights />} />
                 <Route path="metrics" element={<Metrics />} />
+                <Route path="goals" element={<Goals />} />
+                <Route path="assistant" element={<Assistant />} />
               </Route>
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>

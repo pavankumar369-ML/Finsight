@@ -40,6 +40,42 @@ def suggest(body: SuggestIn, user: User = Depends(current_user)):
             "inference_ms": round((time.perf_counter() - t0) * 1000, 3)}
 
 
+def _filtered(db, user, q="", category="", type="", month="", anomaly=False):
+    qry = db.query(Transaction).filter(Transaction.user_id == user.id)
+    if q:
+        qry = qry.filter(or_(Transaction.description.ilike(f"%{q}%"), Transaction.category.ilike(f"%{q}%")))
+    if category:
+        qry = qry.filter(Transaction.category == category)
+    if type in ("expense", "income"):
+        qry = qry.filter(Transaction.type == type)
+    if month:
+        try:
+            y, m = map(int, month.split("-"))
+            start = date(y, m, 1)
+            end = date(y + (m == 12), (m % 12) + 1, 1)
+        except ValueError:
+            raise HTTPException(422, "Month must look like 2026-09.")
+        qry = qry.filter(Transaction.date >= start, Transaction.date < end)
+    if anomaly:
+        qry = qry.filter(Transaction.is_anomaly.is_(True))
+    return qry
+
+
+@router.get("/transactions/export")
+def export_csv(q: str = "", category: str = "", type: str = "", month: str = "", anomaly: bool = False,
+               user: User = Depends(current_user), db: Session = Depends(get_db)):
+    import csv
+    rows = _filtered(db, user, q, category, type, month, anomaly).order_by(Transaction.date.desc()).all()
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(["Date", "Description", "Type", "Category", "Amount", "Model confidence", "Corrected by user", "Unusual"])
+    for t in rows:
+        w.writerow([t.date.isoformat(), t.description, t.type, t.category, f"{t.amount:.2f}", f"{t.confidence:.2f}",
+                    "yes" if t.user_corrected else "no", t.anomaly_reason or ""])
+    return PlainTextResponse("\ufeff" + buf.getvalue(), media_type="text/csv",
+                             headers={"Content-Disposition": f"attachment; filename=finsight-transactions-{date.today()}.csv"})
+
+
 @router.get("/transactions")
 def list_txns(q: str = "", category: str = "", type: str = "", month: str = "", anomaly: bool = False,
               page: int = Query(1, ge=1), size: int = Query(25, ge=1, le=200),

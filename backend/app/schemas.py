@@ -37,3 +37,26 @@ class BudgetIn(BaseModel):
 
 class SuggestIn(BaseModel):
     description: str = Field(min_length=1, max_length=200)
+
+
+class GoalIn(BaseModel):
+    name: str = Field(min_length=2, max_length=60)
+    target: float = Field(gt=0, lt=1e10)
+    saved: float = Field(default=0, ge=0, lt=1e10)
+    deadline: Optional[date] = None
+    emoji: str = Field(default="🎯", max_length=8)
+
+
+class GoalPatch(BaseModel):
+    name: Optional[str] = Field(default=None, min_length=2, max_length=60)
+    target: Optional[float] = Field(default=None, gt=0, lt=1e10)
+    deadline: Optional[date] = None
+    emoji: Optional[str] = Field(default=None, max_length=8)
+
+
+class ContributeIn(BaseModel):
+    amount: float = Field(gt=-1e10, lt=1e10)
+
+
+class ChatIn(BaseModel):
+    message: str = Field(min_length=1, max_length=1000)

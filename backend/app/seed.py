@@ -1,7 +1,7 @@
 """Creates the demo account with six months of realistic activity."""
 import random
 from datetime import date, timedelta
-from .db import User, Transaction, Budget
+from .db import User, Transaction, Budget, Goal
 from .auth import hash_password
 from .ml import dataset
 from .ml.categorizer import categorizer
@@ -79,6 +79,10 @@ def ensure_demo(db, today=None):
     rng = random.Random(2026)
     db.add_all(build_transactions(user.id, today, rng))
     db.add_all([Budget(user_id=user.id, category=c, monthly_limit=v) for c, v in BUDGETS.items()])
+    db.add_all([Goal(user_id=user.id, name="Emergency fund", target=150000, saved=82000, emoji="🛟"),
+                Goal(user_id=user.id, name="New laptop", target=85000, saved=31000, emoji="💻",
+                     deadline=date(today.year + (today.month > 9), (today.month + 3 - 1) % 12 + 1, 28)),
+                Goal(user_id=user.id, name="Goa trip", target=25000, saved=19500, emoji="🏖️")])
     db.commit()
     from .services import refresh_anomalies
     refresh_anomalies(db, user.id)

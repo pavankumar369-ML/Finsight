@@ -163,3 +163,62 @@ def rule_50_30_20(txns, today: date):
     return {"income": round(income, 2),
             "actual": {"needs": round(n, 2), "wants": round(w + t, 2), "savings": round(s, 2)},
             "ideal": {"needs": round(income * .5, 2), "wants": round(income * .3, 2), "savings": round(income * .2, 2)}}
+
+
+def _merchant(desc: str) -> str:
+    import re
+    t = desc.upper()
+    t = re.sub(r"\d{3,}", " ", t)
+    parts = [p.strip() for p in re.split(r"[/]", t) if p.strip()]
+    skip = {"UPI", "POS", "NEFT", "IMPS", "MISC", "ATM WDL"}
+    parts = [p for p in parts if p not in skip]
+    return re.sub(r"\s+", " ", parts[0]).strip() if parts else t.strip()
+
+
+def detect_recurring(txns, today: date):
+    """Payments to the same merchant in 3+ separate months, roughly monthly, with a stable amount."""
+    groups = defaultdict(list)
+    for t in txns:
+        if t.type == "expense":
+            groups[(_merchant(t.description), t.category)].append(t)
+    out = []
+    for (merchant, cat), items in groups.items():
+        by_month = {}
+        for t in sorted(items, key=lambda t: t.date):
+            by_month.setdefault(month_key(t.date), t)
+        if len(by_month) < 3:
+            continue
+        firsts = sorted(by_month.values(), key=lambda t: t.date)
+        amounts = np.array([t.amount for t in firsts])
+        cv = amounts.std() / amounts.mean() if amounts.mean() else 1
+        # a merchant you use every few days (Swiggy) isn't a bill; bills appear about once a month
+        per_month = len(items) / len(by_month)
+        if cv > 0.35 or per_month > 1.6:
+            continue
+        gaps = [(b.date - a.date).days for a, b in zip(firsts, firsts[1:])]
+        if not gaps or not all(20 <= g <= 40 for g in gaps[-3:]):
+            continue
+        day = int(np.median([t.date.day for t in firsts]))
+        y, m = today.year, today.month
+        paid_this_month = month_key(today) in by_month
+        if paid_this_month or today.day > day + 3:
+            y, m = (y + 1, 1) if m == 12 else (y, m + 1)
+        due = date(y, m, min(day, calendar.monthrange(y, m)[1]))
+        out.append({"merchant": merchant.title(), "category": cat, "amount": round(float(amounts[-3:].mean()), 2),
+                    "last_amount": round(float(firsts[-1].amount), 2), "last_paid": firsts[-1].date.isoformat(),
+                    "months": len(by_month), "next_due": due.isoformat(), "days_until": (due - today).days,
+                    "variable": bool(cv > 0.08)})
+    out.sort(key=lambda r: r["days_until"])
+    return out
+
+
+def avg_monthly_savings(txns, today: date, months=3):
+    df = monthly_frame(txns)
+    if df.empty:
+        return 0.0
+    past = df[df["month"] < month_key(today)]
+    ms = sorted(past["month"].unique())[-months:]
+    if not ms:
+        return 0.0
+    p = past[past["month"].isin(ms)]
+    return float((p[p["type"] == "income"]["amount"].sum() - p[p["type"] == "expense"]["amount"].sum()) / len(ms))

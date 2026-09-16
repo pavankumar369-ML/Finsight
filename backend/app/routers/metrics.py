@@ -7,6 +7,7 @@ from ..ml.categorizer import categorizer
 from ..ml import analytics as A
 from .. import metrics_store
 from datetime import date
+from .assistant import assistant_stats
 
 router = APIRouter(prefix="/api/metrics", tags=["metrics"])
 
@@ -72,6 +73,7 @@ def models(user: User = Depends(current_user), db: Session = Depends(get_db)):
         "user": {"transactions": len(txns), "anomalies": sum(t.is_anomaly for t in txns),
                  "forecast_backtest_mape": fc["backtest_mape"], "forecast_months": len(fc["history"])},
         "benchmarks": BENCH,
+        "assistant": assistant_stats(db),
     }
 
 

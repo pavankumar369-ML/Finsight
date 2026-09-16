@@ -6,7 +6,7 @@ from .db import init_db, SessionLocal, ModelRun, Transaction
 from .ml.categorizer import categorizer
 from .ml import benchmarks
 from . import metrics_store
-from .routers import auth, transactions, analytics, metrics
+from .routers import auth, transactions, analytics, metrics, goals, notifications, assistant
 from .seed import ensure_demo
 
 
@@ -36,7 +36,7 @@ async def lifespan(app: FastAPI):
     metrics_store.flush()
 
 
-app = FastAPI(title="FinSight API", version="1.0.0", lifespan=lifespan)
+app = FastAPI(title="FinSight API", version="2.0.0", lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
                    allow_methods=["*"], allow_headers=["*"])
 
@@ -59,5 +59,5 @@ def health():
     return {"ok": True, "model_ready": categorizer.pipe is not None}
 
 
-for r in (auth.router, transactions.router, analytics.router, metrics.router):
+for r in (auth.router, transactions.router, analytics.router, metrics.router, goals.router, notifications.router, assistant.router):
     app.include_router(r)

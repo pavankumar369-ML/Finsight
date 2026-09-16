@@ -44,6 +44,29 @@ class Budget(Base):
     monthly_limit = Column(Float, nullable=False)
 
 
+class Goal(Base):
+    __tablename__ = "goals"
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=False)
+    name = Column(String(60), nullable=False)
+    target = Column(Float, nullable=False)
+    saved = Column(Float, default=0)
+    deadline = Column(Date, nullable=True)
+    emoji = Column(String(8), default="🎯")
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class ChatMessage(Base):
+    __tablename__ = "chat_messages"
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=False)
+    role = Column(String(10), nullable=False)       # user | assistant
+    content = Column(Text, nullable=False)
+    mode = Column(String(20), nullable=True)        # llm | offline
+    ms = Column(Float, nullable=True)
+    ts = Column(DateTime, default=datetime.utcnow)
+
+
 class RequestLog(Base):
     __tablename__ = "request_logs"
     id = Column(Integer, primary_key=True)
