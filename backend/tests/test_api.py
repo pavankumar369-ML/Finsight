@@ -195,3 +195,65 @@ def test_export_csv(client, demo):
     assert r.status_code == 200 and "text/csv" in r.headers["content-type"]
     lines = r.text.strip().splitlines()
     assert lines[0].lstrip("\ufeff").startswith("Date,Description") and all(",income," in l for l in lines[1:])
+
+
+def test_import_excel_with_preamble_and_word_amounts(client, user):
+    import datetime, openpyxl
+    wb = openpyxl.Workbook(); ws = wb.active
+    ws.append(["State Bank of India - Account Statement"]); ws.append([])
+    ws.append(["Txn Date", "Description", "Debit", "Credit", "Balance"])
+    ws.append([datetime.datetime(2026, 6, 5), "UPI/NETFLIX/ZZ1", "₹499.00", None, "1000"])
+    ws.append([datetime.datetime(2026, 6, 6), "SALARY CREDIT ACME", None, "Fifty thousand", "51000"])
+    ws.append([None, "Closing Balance", None, None, "51000"])
+    buf = io.BytesIO(); wb.save(buf)
+    r = client.post("/api/transactions/import", headers=user,
+                    files={"file": ("sbi.xlsx", io.BytesIO(buf.getvalue()), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")}).json()
+    assert r["imported"] == 2 and r["file_type"] == "Excel" and r["amounts_from_words"] == 1
+    assert r["breakdown"].get("Salary") == 1 and r["detected_columns"]["debit"] == "Debit"
+
+
+def test_import_messy_bank_csv(client, user):
+    csv = ("HDFC BANK,,\nStatement for XXXX1234,,\n,,\n"
+           "Date,Narration,Chq./Ref.No.,Value Dt,Withdrawal Amt.,Deposit Amt.,Closing Balance\n"
+           '10/06/26,UPI/ZOMATO/QQ1,,10/06/26,"1,250.00",,"9,000"\n'
+           "11/06/26,UPI/UBER/QQ2,,11/06/26,two hundred twelve,,8788\n"
+           "12/06/26,IMPS/REFUND AMAZON QQ3,,12/06/26,,Rs. 500 Cr,9288\n"
+           "13/06/26,UPI/BIGBASKET/QQ4,,13/06/26,Nil,Nil,\n").encode()
+    r = client.post("/api/transactions/import", headers=user, files={"file": ("hdfc.csv", io.BytesIO(csv), "text/csv")}).json()
+    assert r["imported"] == 3 and r["error_count"] == 1 and r["header_row"] == 4 and r["breakdown"].get("Refund") == 1
+
+
+def test_import_rejects_other_types(client, user):
+    r = client.post("/api/transactions/import", headers=user, files={"file": ("a.pdf", io.BytesIO(b"%PDF"), "application/pdf")})
+    assert r.status_code == 415
+
+
+def test_words_to_number_indian_scale():
+    from app.statement_parser import parse_amount
+    assert parse_amount("Rs. Three lakh twenty five thousand only")[0] == 325000
+    assert parse_amount("(1,250.50)") == (1250.5, "expense")
+    assert parse_amount("₹ 2,000 CR") == (2000.0, "income")
+    assert parse_amount("one hundred rupees fifty paise")[0] == 100.5
+    assert parse_amount("Nil")[0] is None
+
+
+def test_ml_insights(client, demo, user):
+    r = client.get("/api/ml-insights", headers=demo).json()
+    seg = r["segments"]
+    assert seg["k"] in (3, 4) and -1 <= seg["silhouette"] <= 1 and abs(sum(g["share"] for g in seg["groups"]) - 100) < 1
+    assert len({g["name"] for g in seg["groups"]}) == seg["k"]
+    assert all(t["direction"] in ("rising", "falling", "stable") for t in r["trends"]["items"])
+    assert r["what_if"]["income"] > 0 and r["weekday"]["busiest"] in ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+    empty = client.post("/api/auth/register", json={"name": "Nobody Here", "email": "ml-empty@x.com", "password": "secret12"}).json()
+    e = client.get("/api/ml-insights", headers={"Authorization": "Bearer " + empty["token"]})
+    assert e.status_code == 200 and e.json()["segments"] is None
+
+
+def test_login_rate_limit_and_headers(client):
+    from app import main
+    main._attempts.clear()
+    codes = [client.post("/api/auth/login", json={"email": "nobody@x.com", "password": "wrongpass"}).status_code for _ in range(12)]
+    assert codes[:10] == [401] * 10 and codes[-1] == 429
+    main._attempts.clear()
+    h = client.get("/api/health")
+    assert h.headers["x-content-type-options"] == "nosniff" and h.json()["database"] == "sqlite"

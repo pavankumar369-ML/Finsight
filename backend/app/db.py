@@ -4,8 +4,13 @@ from sqlalchemy import (create_engine, Column, Integer, String, Float, Boolean, 
                         DateTime, ForeignKey, Text, UniqueConstraint)
 from sqlalchemy.orm import declarative_base, sessionmaker
 
-DB_URL = os.getenv("FINSIGHT_DB", "sqlite:///./finsight.db")
-engine = create_engine(DB_URL, connect_args={"check_same_thread": False} if DB_URL.startswith("sqlite") else {})
+DB_URL = os.getenv("DATABASE_URL") or os.getenv("FINSIGHT_DB", "sqlite:///./finsight.db")
+if DB_URL.startswith("postgres://"):          # Render/Neon/Heroku style URLs
+    DB_URL = DB_URL.replace("postgres://", "postgresql://", 1)
+if DB_URL.startswith("sqlite"):
+    engine = create_engine(DB_URL, connect_args={"check_same_thread": False})
+else:
+    engine = create_engine(DB_URL, pool_pre_ping=True, pool_size=5, max_overflow=5, pool_recycle=280)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 Base = declarative_base()
 

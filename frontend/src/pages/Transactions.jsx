@@ -3,7 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import { AnimatePresence, motion } from "motion/react";
 import { AlertOctagon, ChevronLeft, ChevronRight, Download, Pencil, Plus, Search, SearchX, Trash2, Upload, X } from "lucide-react";
 import clsx from "clsx";
-import { api, dataChanged, getToken } from "../lib/api";
+import { api, apiUrl, dataChanged, getToken } from "../lib/api";
 import { useApi, useDebounced } from "../lib/hooks";
 import { Button, Card, Empty, ErrorState, IconButton, Input, PageHeader, Segmented, Select, Skeleton } from "../components/ui";
 import CategoryPicker from "../components/CategoryPicker";
@@ -72,7 +72,7 @@ export default function Transactions() {
     setExporting(true);
     try {
       const qs = path.split("?")[1].replace(/(^|&)(page|size)=[^&]*/g, "");
-      const res = await fetch(`/api/transactions/export?${qs}`, { headers: { Authorization: `Bearer ${getToken()}` } });
+      const res = await fetch(apiUrl(`/transactions/export?${qs}`), { headers: { Authorization: `Bearer ${getToken()}` } });
       if (!res.ok) throw new Error("Export failed. Try again.");
       const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(await res.blob()), download: `finsight-transactions.csv` });
       a.click(); URL.revokeObjectURL(a.href);
@@ -103,7 +103,7 @@ export default function Transactions() {
   return (
     <>
       <PageHeader title="Transactions" subtitle="Every category here was predicted by the model. Click a category to correct it."
-        actions={<><Button variant="secondary" icon={Download} loading={exporting} onClick={exportCsv}>Export</Button><Button variant="secondary" icon={Upload} onClick={actions.importCsv}>Import CSV</Button><Button icon={Plus} onClick={actions.addTxn}>Add</Button></>} />
+        actions={<><Button variant="secondary" icon={Download} loading={exporting} onClick={exportCsv}>Export</Button><Button variant="secondary" icon={Upload} onClick={actions.importCsv}>Import</Button><Button icon={Plus} onClick={actions.addTxn}>Add</Button></>} />
 
       <Card className="mb-4 p-3 sm:p-4">
         <div className="flex flex-col gap-3 xl:flex-row xl:items-center">

@@ -11,6 +11,7 @@ from ..schemas import TxnIn, TxnPatch, SuggestIn
 from ..ml.categorizer import categorizer
 from ..ml.dataset import EXPENSE_CATEGORIES, INCOME_CATEGORIES
 from ..services import refresh_anomalies
+from ..statement_parser import parse_statement
 
 router = APIRouter(prefix="/api", tags=["transactions"])
 
@@ -186,78 +187,43 @@ def _pick(cols, *names):
 
 
 @router.post("/transactions/import")
-async def import_csv(file: UploadFile = File(...), user: User = Depends(current_user), db: Session = Depends(get_db)):
+async def import_statement(file: UploadFile = File(...), user: User = Depends(current_user), db: Session = Depends(get_db)):
     t0 = time.perf_counter()
+    name = (file.filename or "").lower()
+    if not name.endswith((".csv", ".txt", ".xlsx", ".xlsm", ".xls")):
+        raise HTTPException(415, "Upload a .csv, .xlsx or .xls bank statement.")
     raw = await file.read()
     if len(raw) > 5 * 1024 * 1024:
         raise HTTPException(413, "File is larger than 5 MB. Split the statement and upload it in parts.")
     try:
-        df = pd.read_csv(io.BytesIO(raw), dtype=str).fillna("")
-    except Exception:
-        raise HTTPException(422, "This file could not be read as CSV. Export the statement as .csv and try again.")
-    cols = {c: c.strip().lower() for c in df.columns}
-    df = df.rename(columns=cols)
-    c_date = _pick(df.columns, "date")
-    c_desc = _pick(df.columns, "narration", "description", "details", "remarks", "particulars")
-    c_debit = _pick(df.columns, "debit", "withdrawal")
-    c_credit = _pick(df.columns, "credit", "deposit")
-    c_amount = _pick(df.columns, "amount")
-    c_type = _pick(df.columns, "type")
-    if not c_date or not c_desc or not (c_amount or c_debit or c_credit):
-        raise HTTPException(422, "Couldn't find the columns. The CSV needs Date, Description (or Narration) "
-                                 "and either Amount or Debit/Credit columns.")
-
-    def num(v):
-        v = str(v).replace(",", "").replace("₹", "").strip()
-        try:
-            return float(v) if v else 0.0
-        except ValueError:
-            return 0.0
+        parsed_file = parse_statement(raw, name)
+    except ValueError as e:
+        raise HTTPException(422, str(e))
 
     existing = {(t.date, t.description, round(t.amount, 2), t.type) for t in
                 db.query(Transaction).filter(Transaction.user_id == user.id).all()}
-    signed = bool(c_amount) and not c_type and any(num(v) < 0 for v in df[c_amount])
-    parsed, errors, dupes = [], [], 0
-    for i, row in df.iterrows():
-        d = pd.to_datetime(row[c_date], dayfirst=True, errors="coerce")
-        desc = str(row[c_desc]).strip()
-        if pd.isna(d) or not desc:
-            errors.append(f"Row {i + 2}: missing or unreadable date/description")
-            continue
-        if c_amount:
-            amt = num(row[c_amount])
-            if c_type:
-                tv = str(row[c_type]).lower()
-                typ = "income" if ("cr" in tv or "income" in tv) else "expense"
-                amt = abs(amt)
-            elif signed:
-                typ, amt = ("income", amt) if amt > 0 else ("expense", -amt)
-            else:
-                typ = "expense"
-        else:
-            dr, cr = num(row[c_debit]) if c_debit else 0, num(row[c_credit]) if c_credit else 0
-            typ, amt = ("income", cr) if cr > 0 else ("expense", dr)
-        if amt <= 0:
-            errors.append(f"Row {i + 2}: amount is zero or missing")
-            continue
-        key = (d.date(), desc, round(amt, 2), typ)
+    parsed, dupes = [], 0
+    for key in parsed_file["rows"]:
         if key in existing:
             dupes += 1
             continue
         existing.add(key)
         parsed.append(key)
+    errors = parsed_file["errors"]
 
     exp_idx = [k for k, p in enumerate(parsed) if p[3] == "expense"]
     preds = categorizer.predict([parsed[k][1] for k in exp_idx]) if exp_idx else []
     pmap = dict(zip(exp_idx, preds))
-    breakdown, low = {}, 0
-    new = []
+    breakdown, low, new = {}, 0, []
     for k, (d, desc, amt, typ) in enumerate(parsed):
         if typ == "expense":
             cat, conf, _ = pmap[k]
             low += conf < 0.6
         else:
-            cat, conf = ("Salary" if "salary" in desc.lower() else "Other income"), 1.0
+            dl = desc.lower()
+            cat = "Salary" if "salary" in dl else "Refund" if ("refund" in dl or "reversal" in dl) else \
+                  "Freelance" if any(w in dl for w in ("upwork", "fiverr", "freelance")) else "Other income"
+            conf = 1.0
         breakdown[cat] = breakdown.get(cat, 0) + 1
         new.append(Transaction(user_id=user.id, date=d, description=desc, amount=amt, type=typ,
                                category=cat, confidence=round(conf, 4), source="csv"))
@@ -266,4 +232,7 @@ async def import_csv(file: UploadFile = File(...), user: User = Depends(current_
     flagged = refresh_anomalies(db, user.id)
     return {"imported": len(new), "duplicates": dupes, "errors": errors[:20], "error_count": len(errors),
             "low_confidence": int(low), "breakdown": breakdown, "anomalies_total": flagged,
+            "detected_columns": parsed_file["detected"], "header_row": parsed_file["header_row"],
+            "amounts_from_words": parsed_file["amounts_from_words"],
+            "file_type": "Excel" if name.endswith((".xlsx", ".xlsm", ".xls")) else "CSV",
             "elapsed_ms": round((time.perf_counter() - t0) * 1000, 1)}

@@ -186,3 +186,14 @@ def insights(user: User = Depends(current_user), db: Session = Depends(get_db)):
                              "series": {c: [round(h.get(m, 0), 2) for m in months] for c, h in hist.items()}},
         "anomalies": [ser(t) for t in sorted([t for t in txns if t.is_anomaly], key=lambda t: t.date, reverse=True)],
     }
+
+
+@router.get("/ml-insights")
+def ml_insights(user: User = Depends(current_user), db: Session = Depends(get_db)):
+    from ..ml import ml_insights as MI
+    from ..db import Goal
+    today = date.today()
+    txns, _ = _load(db, user)
+    data = cached(user.id, ("ml_insights", today), lambda: MI.build(txns, today))
+    goals = db.query(Goal).filter(Goal.user_id == user.id).all()
+    return {**data, "goals": [{"name": g.name, "emoji": g.emoji, "remaining": round(max(g.target - g.saved, 0), 2)} for g in goals if g.saved < g.target]}

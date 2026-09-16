@@ -1,6 +1,6 @@
 # FinSight — AI-powered Personal Finance Management System
 
-**Version 2 (Phase 2).** React + FastAPI + scikit-learn, with an AI finance assistant. Imports bank statements, auto-categorises UPI/POS/NEFT transactions, forecasts next month's spending, flags unusual spends and scores financial health. A live **Metrics** page measures the running system against the targets in the project document.
+**Version 3 (final).** React + FastAPI + scikit-learn. AI assistant, ML insights, CSV and Excel statement import. Deployable to Vercel + Render (see [DEPLOY.md](DEPLOY.md)). Imports bank statements, auto-categorises UPI/POS/NEFT transactions, forecasts next month's spending, flags unusual spends and scores financial health. A live **Metrics** page measures the running system against the targets in the project document.
 
 ## Run it locally
 
@@ -25,8 +25,8 @@ npm run dev
 ```
 Open **http://localhost:5173** and click **Explore with 6 months of demo data**, or sign in with `demo@finsight.app` / `demo1234`.
 
-**3. Optional: connect a real LLM to the assistant**
-The assistant works out of the box in offline mode (answers computed from your data). For open-ended conversation, copy `backend/.env.example` to `backend/.env`, paste a free API key (Groq or Gemini), and restart the backend. The Assistant page then shows the model name, and the Metrics page measures real LLM response time.
+**3. Optional: API key for the AI assistant (not required)**
+No API key is needed to run FinSight. Every ML feature (categoriser, forecasts, anomaly detection, clustering, trends) runs locally with scikit-learn, and the assistant works out of the box in offline mode (answers computed from your data). For open-ended conversation, copy `backend/.env.example` to `backend/.env`, paste a free API key (Groq or Gemini), and restart the backend. The Assistant page then shows the model name, and the Metrics page measures real LLM response time.
 
 **4. Tests**
 ```bash
@@ -49,6 +49,9 @@ pytest -q
 | **Savings goals (v2)** | Goals with emoji, target, deadline; quick add/withdraw; finish-date projection from your average monthly savings; required monthly amount for deadlines |
 | **Recurring bills (v2)** | Detects subscriptions and bills (3+ months, ~monthly gap, stable amount, not everyday merchants); next due date and monthly total |
 | **Notifications (v2)** | Bell with unread count: budget overruns, bills due within 7 days, unusual spends, goal milestones |
+| **ML insights (v3)** | K-Means spending segments (k chosen by silhouette score) with scatter plot; trend detection by linear regression with p-values; variance decomposition of what makes months differ; weekday rhythm; interactive what-if simulator that recalculates savings and goal finish dates |
+| **Smart import (v3)** | CSV, XLSX and XLS. Finds the table below bank preamble rows, maps headers like "Withdrawal Amt." or "Transaction Remarks", reads amounts like "₹1,250.00 Dr", "(500)", "Nil" and amounts in words ("two thousand five hundred", "Rs. Three lakh only"), Excel serial dates, Dr/Cr columns, and skips opening/closing balance rows. Shows which columns were detected |
+| **Production (v3)** | Postgres via `DATABASE_URL`, CORS from env, sign-in rate limiting (10 attempts / 5 min), security headers, Render blueprint, Vercel config |
 | **Export (v2)** | Download the filtered transaction list as CSV |
 | UI | Dark and light themes, responsive down to phones, keyboard shortcut **N** to add a transaction, reduced-motion support |
 
@@ -83,7 +86,9 @@ backend/
     ml/                  dataset, categorizer, analytics (forecast, anomalies, health), benchmarks
     routers/             auth, transactions (+CSV), analytics (dashboard, budgets, insights), metrics
     assistant.py         LLM client, data context builder, offline answer engine
-  tests/test_api.py      21 API tests (incl. mocked LLM and LLM-failure fallback)
+    statement_parser.py  CSV/Excel reader: header detection, column mapping, amounts in words
+    ml/ml_insights.py    K-Means segments, regression trends, variance drivers, what-if base
+  tests/test_api.py      27 API tests (incl. mocked LLM, Excel import, messy statements, ML insights, rate limit)
 frontend/
   src/
     pages/               Login, Dashboard, Transactions, Assistant, Budgets, Goals, Insights, Metrics
@@ -112,6 +117,19 @@ frontend/
 | Assistant showed ISO dates ("2026-10-05") | Friendly dates ("5 Oct") |
 | Double focus ring on the chat input | Removed the inner outline |
 
+## Phase 3 test log
+
+| Found in testing | Fix |
+|---|---|
+| Bank CSVs with preamble rows lost every transaction (pandas dropped rows wider than the first line) | Rows read with `csv.reader` and padded to the widest row |
+| "Value Dt" column was treated as the amount, so a "Nil" row imported as ₹4 | Amount column ignored whenever Debit/Credit columns exist; "value" removed from amount synonyms |
+| "Rs. Three lakh…" not recognised (the full stop after "Rs") | Punctuation stripped before word-to-number parsing |
+| ML insights crashed with "NaN is not JSON compliant" for flat category histories | Regression output sanitised; NaN/inf become null |
+| Three clusters with medians ₹249/₹270/₹310 were named small/mid/large | Names now come from the feature that separates them (size, weekend share, time of month) |
+| Import dialog still rejected .xlsx files | File check accepts .csv, .xlsx, .xls, .xlsm; verified by uploading an ICICI-style Excel file in the browser |
+| Verified deployed topology locally: frontend built with `VITE_API_URL` on a different origin, backend CORS limited to that origin | All pages, import and API calls work cross-origin with no console errors |
+
 ## Roadmap
 - ✅ **Phase 2 (v2):** AI assistant, savings goals, recurring bills, notifications, CSV export.
-- **Next:** deployment, auth hardening (refresh tokens, rate limiting), Postgres option, performance and accessibility audit, mobile polish.
+- ✅ **Phase 3 (v3):** ML insights, Excel and messy-statement import, production hardening, Vercel + Render deployment.
+- **Ideas beyond v3:** refresh tokens, PDF statement parsing (OCR), multi-currency, shared household budgets.

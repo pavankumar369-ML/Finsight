@@ -4,7 +4,7 @@ import { FileUp, FileSpreadsheet, Download, AlertTriangle } from "lucide-react";
 import clsx from "clsx";
 import Modal from "./Modal";
 import { Button, CountUp } from "./ui";
-import { api, dataChanged } from "../lib/api";
+import { api, apiUrl, dataChanged } from "../lib/api";
 import { CategoryIcon, catMeta } from "../lib/categories";
 import { useToast } from "./Toast";
 
@@ -19,7 +19,7 @@ export default function ImportCsv({ open, onClose }) {
   const close = () => { onClose(); setTimeout(() => { setFile(null); setResult(null); }, 250); };
   const pick = (f) => {
     if (!f) return;
-    if (!f.name.toLowerCase().endsWith(".csv")) return toast("Choose a .csv file exported from your bank.", { tone: "bad" });
+    if (!/\.(csv|xlsx|xls|xlsm)$/i.test(f.name)) return toast("Choose a .csv, .xlsx or .xls statement from your bank.", { tone: "bad" });
     setFile(f); setResult(null);
   };
   async function upload() {
@@ -33,7 +33,7 @@ export default function ImportCsv({ open, onClose }) {
     } catch (e) { toast(e.message, { tone: "bad" }); } finally { setBusy(false); }
   }
   async function sample() {
-    const res = await fetch("/api/transactions/sample-csv");
+    const res = await fetch(apiUrl("/transactions/sample-csv"));
     const blob = await res.blob();
     const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(blob), download: "finsight-sample.csv" });
     a.click(); URL.revokeObjectURL(a.href);
@@ -42,7 +42,7 @@ export default function ImportCsv({ open, onClose }) {
   const maxB = breakdown[0]?.[1] ?? 1;
 
   return (
-    <Modal open={open} onClose={close} title="Import bank statement" subtitle="CSV with Date, Description (or Narration) and Amount or Debit/Credit columns." width={560}>
+    <Modal open={open} onClose={close} title="Import bank statement" subtitle="CSV or Excel. Bank headers, Dr/Cr markers, Nil values and amounts written in words are handled automatically." width={560}>
       <AnimatePresence mode="wait">
         {!result ? (
           <motion.div key="pick" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-4">
@@ -57,10 +57,10 @@ export default function ImportCsv({ open, onClose }) {
               {file ? (
                 <span><span className="block font-semibold">{file.name}</span><span className="text-[13px] text-muted">{(file.size / 1024).toFixed(1)} KB · ready to import</span></span>
               ) : (
-                <span><span className="block font-semibold">Drop your statement here</span><span className="text-[13px] text-muted">or click to choose a file (up to 5 MB)</span></span>
+                <span><span className="block font-semibold">Drop your statement here</span><span className="text-[13px] text-muted">or click to choose a .csv, .xlsx or .xls file (up to 5 MB)</span></span>
               )}
             </button>
-            <input ref={input} type="file" accept=".csv,text/csv" hidden onChange={(e) => pick(e.target.files?.[0])} />
+            <input ref={input} type="file" accept=".csv,.xlsx,.xls,.xlsm,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden onChange={(e) => pick(e.target.files?.[0])} />
             <div className="flex flex-wrap items-center justify-between gap-2">
               <Button variant="ghost" size="sm" icon={Download} onClick={sample}>Download sample CSV</Button>
               <div className="flex gap-2">
@@ -93,6 +93,19 @@ export default function ImportCsv({ open, onClose }) {
                       </span>
                       <span className="num w-8 text-right text-sm text-muted">{n}</span>
                     </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            {result.detected_columns && (
+              <div className="rounded-2xl border border-line-soft p-3 text-[13px]">
+                <p className="mb-2 font-semibold text-muted">
+                  Read as {result.file_type}{result.header_row > 1 ? `, table found at row ${result.header_row}` : ""}
+                  {result.amounts_from_words > 0 && <>, {result.amounts_from_words} amount{result.amounts_from_words > 1 ? "s" : ""} converted from words</>}
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  {Object.entries(result.detected_columns).map(([k, v]) => (
+                    <span key={k} className="rounded-lg bg-surface-2 px-2 py-1 text-[12px]"><span className="text-faint">{k}</span> ← <span className="font-semibold">{v}</span></span>
                   ))}
                 </div>
               </div>

@@ -7,6 +7,7 @@ import { useApi, useTokens } from "../lib/hooks";
 import { Card, CardHeader, ChartTooltip, CountUp, Empty, ErrorState, PageHeader, Pill, Skeleton } from "../components/ui";
 import { ChartBox } from "../components/ui";
 import { CategoryIcon, catMeta } from "../lib/categories";
+import MLInsights from "../components/MLInsights";
 import { compact, dateLabel, money, monthLabel, monthName } from "../lib/format";
 
 export default function Insights() {
@@ -28,6 +29,7 @@ export default function Insights() {
           <AnomalyList list={data?.anomalies} className="col-span-12" />
         </div>
       )}
+      {data && enough && <MLInsights />}
     </>
   );
 }

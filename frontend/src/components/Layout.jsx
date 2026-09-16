@@ -74,7 +74,7 @@ export default function Layout() {
           </nav>
           <div className="mt-6 space-y-2 px-1">
             <Button className="w-full" icon={Plus} onClick={actions.addTxn}>Add transaction</Button>
-            <Button className="w-full" variant="secondary" icon={Upload} onClick={actions.importCsv}>Import CSV</Button>
+            <Button className="w-full" variant="secondary" icon={Upload} onClick={actions.importCsv}>Import statement</Button>
           </div>
           <div className="mt-auto flex items-center gap-3 rounded-2xl border border-line-soft bg-surface-2 p-3">
             <span className="display grid h-9 w-9 shrink-0 place-items-center rounded-full bg-accent text-[15px] font-bold text-accent-ink">
@@ -94,7 +94,7 @@ export default function Layout() {
           <div className="flex items-center gap-1">
             <Notifications />
             <ThemeToggle />
-            <IconButton icon={Upload} label="Import CSV" onClick={actions.importCsv} />
+            <IconButton icon={Upload} label="Import statement" onClick={actions.importCsv} />
             <IconButton icon={LogOut} label="Sign out" onClick={logout} />
           </div>
         </header>

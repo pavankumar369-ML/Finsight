@@ -1,0 +1,27 @@
+# Render Blueprint: New > Blueprint > pick this repo. Creates the FinSight API.
+services:
+  - type: web
+    name: finsight-api
+    runtime: python
+    rootDir: backend
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.8
+      - key: FINSIGHT_SECRET
+        generateValue: true
+      - key: ALLOWED_ORIGINS
+        sync: false          # set to your Vercel URL, e.g. https://finsight.vercel.app
+      - key: ALLOWED_ORIGIN_REGEX
+        value: https://.*\.vercel\.app
+      - key: DATABASE_URL
+        sync: false          # optional Postgres URL (Neon). Without it, SQLite resets on every redeploy.
+      - key: LLM_API_KEY
+        sync: false          # optional: Groq/Gemini key for the AI assistant
+      - key: LLM_BASE_URL
+        value: https://api.groq.com/openai/v1
+      - key: LLM_MODEL
+        value: llama-3.3-70b-versatile
