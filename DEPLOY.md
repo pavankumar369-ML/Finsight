@@ -56,6 +56,9 @@ From your laptop, point the reset command at the Neon database once (PowerShell)
 `$env:DATABASE_URL="<your Neon connection string>"; python -m app.manage reset --yes`
 Or in Neon's dashboard: **Branches → Reset from parent**, or run `DROP SCHEMA public CASCADE; CREATE SCHEMA public;` in the SQL Editor, then restart the Render service.
 
+## If `/api/health` stays `"ready": false` for a long time (improved in v3.7.4)
+The AI assistant used to measure its own accuracy by training itself 6 separate times (a 5-fold cross-validation) on every single server start, even though that number never changes. From v3.7.4 it trains once, using a precomputed accuracy figure, cutting a meaningful chunk of the background warm-up time -- especially valuable on Render's slow free CPU. If it's still slow after updating, that's just genuine free-tier CPU speed: the app is fully usable while `"ready": false` (only a few ML-dependent actions like adding a transaction politely ask you to wait a few seconds), and it does finish -- give it a few minutes on the very first request after a cold start.
+
 ## If Render shows "unsupported startup parameter in options: statement_timeout" (fixed in v3.7.3)
 This was a bug in FinSight's own v3.7.1 database-timeout setting, not something you did wrong: it tried to set a `statement_timeout` connection option that Neon's **pooled** connection endpoint (hostname containing `-pooler`) rejects outright. Removed in v3.7.3. If you still see this on an older version, either update to v3.7.3, or as a workaround use Neon's **unpooled** connection string instead (Neon → Connect → toggle off "Pooled connection").
 

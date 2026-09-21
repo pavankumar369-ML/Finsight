@@ -58,7 +58,7 @@ async def lifespan(app: FastAPI):
     metrics_store.flush()
 
 
-app = FastAPI(title="FinSight API", version="3.7.3", lifespan=lifespan)
+app = FastAPI(title="FinSight API", version="3.7.4", lifespan=lifespan)
 ORIGINS = [o.strip().rstrip("/") for o in os.getenv("ALLOWED_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173").split(",") if o.strip()]
 app.add_middleware(CORSMiddleware, allow_origins=ORIGINS, allow_origin_regex=os.getenv("ALLOWED_ORIGIN_REGEX") or None,
                    allow_methods=["*"], allow_headers=["*"], expose_headers=["Content-Disposition"], max_age=600)

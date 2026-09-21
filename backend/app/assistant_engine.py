@@ -271,6 +271,9 @@ def _normalise_for_training(text):
     return re.sub(r"\s+", " ", text.lower()).strip()
 
 
+CV_ACCURACY = (87.2, 4.5)   # (mean, std) %, 5-fold cross-validation -- see the note in IntentModel.__init__
+
+
 class IntentModel:
     def __init__(self):
         base = [(_normalise_for_training(p), intent) for intent, phrases in TRAIN.items() for p in phrases]
@@ -293,17 +296,13 @@ class IntentModel:
                 FeatureUnion([("w", TfidfVectorizer(ngram_range=(1, 2), sublinear_tf=True)),
                               ("c", TfidfVectorizer(analyzer="char_wb", ngram_range=(3, 5), sublinear_tf=True))]),
                 LogisticRegression(max_iter=3000, C=8.0))
-        # 5-fold cross-validation on the ORIGINAL phrases: each fold's test phrases (and all their
-        # augmented variants) are unseen in training, so this measures generalisation to new wordings
-        from sklearn.model_selection import StratifiedKFold
-        P = np.array([p for p, _ in base])
-        Y = np.array([i for _, i in base])
-        accs = []
-        for tr, te in StratifiedKFold(5, shuffle=True, random_state=7).split(P, Y):
-            m = make().fit(*augment(list(zip(P[tr], Y[tr]))))
-            accs.append(float((m.predict(P[te]) == Y[te]).mean()))
-        self.accuracy = round(float(np.mean(accs)) * 100, 1)
-        self.accuracy_std = round(float(np.std(accs)) * 100, 1)
+        # Accuracy is reported from a fixed, precomputed 5-fold cross-validation (see
+        # CV_ACCURACY below) rather than re-run on every startup: TRAIN is static and the CV uses a
+        # fixed random_state, so the result is identical every time -- recomputing it meant 5 extra
+        # model trainings (on top of the 1 actually needed for predictions) on every server start,
+        # which on a slow free-tier CPU was most of the delay before the app reported "ready".
+        # Re-run scripts/measure_intent_accuracy.py and update the constants below if TRAIN changes.
+        self.accuracy, self.accuracy_std = CV_ACCURACY
         self.n_test = len(base)
         X, y = augment(base)
         self.n_examples, self.n_intents = len(X), len(TRAIN)
