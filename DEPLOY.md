@@ -56,6 +56,9 @@ From your laptop, point the reset command at the Neon database once (PowerShell)
 `$env:DATABASE_URL="<your Neon connection string>"; python -m app.manage reset --yes`
 Or in Neon's dashboard: **Branches → Reset from parent**, or run `DROP SCHEMA public CASCADE; CREATE SCHEMA public;` in the SQL Editor, then restart the Render service.
 
+## If the Metrics page shows "This page hit an error" right after a cold start (fixed in v3.7.5)
+The Metrics page used to assume the model-quality data was fully loaded as soon as it got a response, but during the few seconds the background warm-up is still running, that response is empty. From v3.7.5 the page shows a clean "Warming up the models…" message (auto-refreshing) instead, and switches to the normal view the moment it's ready -- no refresh needed.
+
 ## If `/api/health` stays `"ready": false` for a long time (improved in v3.7.4)
 The AI assistant used to measure its own accuracy by training itself 6 separate times (a 5-fold cross-validation) on every single server start, even though that number never changes. From v3.7.4 it trains once, using a precomputed accuracy figure, cutting a meaningful chunk of the background warm-up time -- especially valuable on Render's slow free CPU. If it's still slow after updating, that's just genuine free-tier CPU speed: the app is fully usable while `"ready": false` (only a few ML-dependent actions like adding a transaction politely ask you to wait a few seconds), and it does finish -- give it a few minutes on the very first request after a cold start.
 

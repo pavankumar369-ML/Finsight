@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 from ..db import get_db, ModelRun, Transaction, User, LoginEvent
 from ..auth import current_user, admin_user, is_admin
+from .. import state
 from ..services import training_corrections
 from ..ml.categorizer import categorizer
 from ..ml import analytics as A
@@ -69,6 +70,7 @@ def models(user: User = Depends(current_user), db: Session = Depends(get_db)):
         categorizer.predict([d])
     inference_ms = (time.perf_counter() - t0) * 1000 / len(sample)
     return {
+        "ready": state.READY,   # frontend should show a loading state, not read benchmarks/latest, until this is true
         "latest": run_out(runs[0]) if runs else None,
         "history": [run_out(r) | {"confusion": None} for r in reversed(runs)],
         "confidence_histogram": [{"bucket": f"{i * 10}–{(i + 1) * 10}%", "count": c} for i, c in enumerate(bins)],

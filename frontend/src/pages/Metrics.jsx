@@ -58,7 +58,8 @@ function ReviewCard({ live, models, load }) {
   const b = models?.benchmarks;
   const L = models?.latest;
   const dash = live?.dashboard_avg ?? load?.dashboardAvg ?? null;
-  const rows = models && live ? [
+  const modelsReady = models && live && models.ready && L && b?.forecast && b?.anomaly
+  const rows = modelsReady ? [
     { name: "Categorisation accuracy", target: "≥ 90%", value: `${L.accuracy}%`, pass: L.accuracy >= 90, note: `${L.n_test} test samples` },
     { name: "Categorisation macro F1", target: "≥ 0.85", value: L.f1_macro.toFixed(3), pass: L.f1_macro >= 0.85 },
     { name: "Inference time per transaction", target: "< 50 ms", value: ms(models.inference_ms), pass: models.inference_ms < 50, note: "measured just now" },
@@ -261,7 +262,18 @@ function ModelSection({ m, onRetrained, admin }) {
   const toast = useToast();
   const [busy, setBusy] = useState(false);
   const [hover, setHover] = useState(null);
-  if (!m) return <div className="grid gap-4 lg:grid-cols-2">{[0, 1, 2, 3].map((i) => <Skeleton key={i} className="h-72 rounded-[20px]" />)}</div>;
+  if (!m || !m.ready || !m.latest || !m.benchmarks?.forecast) {
+    return (
+      <Card className="p-10 text-center">
+        <p className="display text-lg font-semibold">Warming up the models…</p>
+        <p className="mx-auto mt-1.5 max-w-sm text-[13px] text-muted">
+          FinSight trains its ML models and the assistant right after starting. This normally takes a few seconds
+          {m && !m.ready ? " on a cold server it can take longer" : ""} — this refreshes automatically.
+        </p>
+        <div className="mx-auto mt-6 grid max-w-2xl gap-4 lg:grid-cols-2">{[0, 1, 2, 3].map((i) => <Skeleton key={i} className="h-56 rounded-[20px]" />)}</div>
+      </Card>
+    );
+  }
   const L = m.latest;
   const labels = L.labels;
   const perClass = labels.map((c, i) => ({ category: c, f1: +(L.per_class_f1[i] * 100).toFixed(1) })).sort((a, b) => a.f1 - b.f1);
