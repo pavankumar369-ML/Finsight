@@ -35,6 +35,7 @@ Why not Firebase? FinSight's backend uses SQL through SQLAlchemy. Firebase is a 
    | `FINSIGHT_SECRET` | any long random string (e.g. from https://generate-secret.vercel.app/64) |
    | `ALLOWED_ORIGINS` | your Vercel URL, filled in after step 3 (e.g. `https://finsight-pavan.vercel.app`) |
    | `ALLOWED_ORIGIN_REGEX` | `https://.*\.vercel\.app` |
+   | `ADMIN_EMAILS` | your email, e.g. `pppk132006@gmail.com` (gives you the admin view of Metrics) |
    | `DATABASE_URL` | Neon connection string (optional, see step 1) |
 4. **Create Web Service**. First build takes ~5 minutes. When it's live, open `https://<your-service>.onrender.com/api/health`; you should see `{"ok": true, ...}`.
 

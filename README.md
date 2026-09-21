@@ -91,7 +91,7 @@ backend/
     manage.py            admin commands: stats, reset database, reset chats
     statement_parser.py  CSV/Excel reader: header detection, column mapping, amounts in words
     ml/ml_insights.py    K-Means segments, regression trends, variance drivers, what-if base
-  tests/test_api.py      33 API tests (incl. assistant intent understanding, Excel and PDF import, password PDFs, ML insights, user metrics, rate limit)
+  tests/test_api.py      36 API tests (incl. admin access control, data-poisoning guard, rate limiting, assistant intent understanding, Excel and PDF import, password PDFs, ML insights, user metrics, rate limit)
 frontend/
   src/
     pages/               Login, Dashboard, Transactions, Assistant, Budgets, Goals, Insights, Metrics
@@ -132,12 +132,26 @@ frontend/
 | Import dialog still rejected .xlsx files | File check accepts .csv, .xlsx, .xls, .xlsm; verified by uploading an ICICI-style Excel file in the browser |
 | Verified deployed topology locally: frontend built with `VITE_API_URL` on a different origin, backend CORS limited to that origin | All pages, import and API calls work cross-origin with no console errors |
 
+## Admin access
+Metrics are public in read-only form (model accuracy, benchmarks, latency, document targets), so recruiters and reviewers can see them. Controls and operational data are **admin-only**, enforced by the backend (403 for everyone else):
+
+| Admin-only | Why |
+|---|---|
+| Retrain model | Prevents data poisoning and CPU abuse. Training also ignores the shared demo account and caps each user at 50 corrections |
+| Run load test | Stops anyone flooding the server (all API calls are also rate-limited: 300/min per IP) |
+| Users section | Operational usage data |
+| Endpoint table | Internal route map |
+
+Set admins with `ADMIN_EMAILS` (comma-separated) in `backend/.env` locally, or in Render's environment. Sign up or sign in with that email and the Metrics page shows an **Admin** badge. Check with `python -m app.manage admins`.
+
 ## Admin commands (run inside `backend`, with the server stopped)
 | Command | What it does |
 |---|---|
 | `python -m app.manage stats` | Row count for every table |
 | `python -m app.manage reset --yes` | Deletes **all** data (SQLite or Postgres) and recreates empty tables. The demo account returns on next start |
 | `python -m app.manage reset-chats --yes` | Deletes only assistant chat history |
+| `python -m app.manage reset-demo --yes` | Restores the shared demo account (if visitors changed or deleted its data) |
+| `python -m app.manage admins` | Shows which emails have admin access |
 
 ## Database upgrades are automatic
 New columns (for example the user-activity fields in v3.1) are added to an existing `finsight.db` or Postgres database on startup, so existing data is kept. There's no need to delete the database when updating.

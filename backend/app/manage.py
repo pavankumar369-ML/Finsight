@@ -3,6 +3,8 @@
     python -m app.manage stats                 # row counts per table
     python -m app.manage reset --yes           # delete ALL data (SQLite or Postgres) and recreate empty tables
     python -m app.manage reset-chats --yes     # delete only assistant chat history
+    python -m app.manage reset-demo --yes      # restore the shared demo account to its original data
+    python -m app.manage admins                # show which emails have admin access (ADMIN_EMAILS)
 """
 import sys
 from sqlalchemy import inspect, text
@@ -38,6 +40,29 @@ def main(argv):
         db.commit()
         db.close()
         print(f"Deleted {n} chat messages.")
+    elif cmd == "reset-demo":
+        if not sure:
+            print("Re-run with --yes to restore the demo account's original data.")
+            return 1
+        from .db import User, Transaction, Budget, Goal, LoginEvent
+        from .seed import DEMO_EMAIL, ensure_demo
+        db = SessionLocal()
+        u = db.query(User).filter(User.email == DEMO_EMAIL).first()
+        if u:
+            for model in (Transaction, Budget, Goal, ChatMessage, LoginEvent):
+                db.query(model).filter(model.user_id == u.id).delete()
+            db.delete(u)
+            db.commit()
+        from .ml.categorizer import categorizer
+        from .services import training_corrections
+        categorizer.train(training_corrections(db))
+        ensure_demo(db)
+        db.close()
+        print("Demo account restored to its original 6 months of data.")
+    elif cmd == "admins":
+        from .auth import admin_emails
+        a = admin_emails()
+        print("Admins: " + (", ".join(sorted(a)) if a else "none. Set ADMIN_EMAILS in backend/.env (or Render's environment)."))
     else:
         print(__doc__)
     return 0

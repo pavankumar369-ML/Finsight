@@ -3,7 +3,8 @@ from collections import defaultdict
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 from ..db import get_db, ModelRun, Transaction, User, LoginEvent
-from ..auth import current_user
+from ..auth import current_user, admin_user, is_admin
+from ..services import training_corrections
 from ..ml.categorizer import categorizer
 from ..ml import analytics as A
 from .. import metrics_store
@@ -43,7 +44,10 @@ def run_out(r):
 @router.get("/live")
 def live(window: int = Query(300, ge=60, le=3600), user: User = Depends(current_user)):
     bucket = 5 if window <= 300 else (15 if window <= 900 else 60)
-    return metrics_store.snapshot(window, bucket)
+    snap = metrics_store.snapshot(window, bucket)
+    if not is_admin(user):
+        snap["endpoints"] = None      # route-level detail is operational info, admin only
+    return {**snap, "admin": is_admin(user)}
 
 
 @router.get("/models")
@@ -70,7 +74,7 @@ def models(user: User = Depends(current_user), db: Session = Depends(get_db)):
         "confidence_histogram": [{"bucket": f"{i * 10}–{(i + 1) * 10}%", "count": c} for i, c in enumerate(bins)],
         "inference_ms": round(inference_ms, 3),
         "avg_confidence": round(sum(t.confidence for t in exp) / len(exp) * 100, 2) if exp else None,
-        "pending_corrections": corrections,
+        "pending_corrections": len(training_corrections(db)),
         "user": {"transactions": len(txns), "anomalies": sum(t.is_anomaly for t in txns),
                  "forecast_backtest_mape": fc["backtest_mape"], "forecast_months": len(fc["history"])},
         "benchmarks": BENCH,
@@ -79,9 +83,8 @@ def models(user: User = Depends(current_user), db: Session = Depends(get_db)):
 
 
 @router.post("/retrain")
-def retrain(user: User = Depends(current_user), db: Session = Depends(get_db)):
-    corrections = [(t.description, t.category) for t in
-                   db.query(Transaction).filter(Transaction.user_corrected.is_(True), Transaction.type == "expense").all()]
+def retrain(user: User = Depends(admin_user), db: Session = Depends(get_db)):
+    corrections = training_corrections(db)
     rep = categorizer.train(corrections)
     run = ModelRun(trigger="retrain", **rep)
     db.add(run)
@@ -90,7 +93,7 @@ def retrain(user: User = Depends(current_user), db: Session = Depends(get_db)):
 
 
 @router.post("/probe")
-def probe(user: User = Depends(current_user)):
+def probe(user: User = Depends(admin_user)):
     """Cheap endpoint the load test uses alongside real ones."""
     t0 = time.perf_counter()
     categorizer.predict(["UPI/SWIGGY/VELLORE/123456"])
@@ -98,7 +101,7 @@ def probe(user: User = Depends(current_user)):
 
 
 @router.get("/users")
-def users(user: User = Depends(current_user), db: Session = Depends(get_db)):
+def users(user: User = Depends(admin_user), db: Session = Depends(get_db)):
     """Aggregate usage only; no other user's name or email is ever returned."""
     from datetime import datetime, timedelta
     from sqlalchemy import func

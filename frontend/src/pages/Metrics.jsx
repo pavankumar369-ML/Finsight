@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Line, LineChart, Tooltip, XAxis, YAxis, ReferenceLine } from "recharts";
-import { BrainCircuit, CheckCircle2, Clock, Gauge, Pause, Play, RefreshCw, Rocket, XCircle, CircleDashed, Users, UserCheck, LogIn, UserPlus, Repeat2, Activity } from "lucide-react";
+import { BrainCircuit, CheckCircle2, Clock, Gauge, Pause, Play, RefreshCw, Rocket, XCircle, CircleDashed, Users, UserCheck, LogIn, UserPlus, Repeat2, Activity, ShieldCheck, Eye, Lock } from "lucide-react";
 import clsx from "clsx";
 import { api, dataChanged } from "../lib/api";
 import { useApi, useTokens } from "../lib/hooks";
@@ -10,10 +10,13 @@ import { ChartBox } from "../components/ui";
 import { duration, ms } from "../lib/format";
 import { catMeta } from "../lib/categories";
 import { useToast } from "../components/Toast";
+import { useAuth } from "../components/Auth";
 
 const clock = (t) => new Date(t).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 
 export default function Metrics() {
+  const { user } = useAuth();
+  const admin = !!user?.is_admin;
   const [paused, setPaused] = useState(false);
   const [windowS, setWindowS] = useState("300");
   const live = useApi(`/metrics/live?window=${windowS}`, { interval: 2000, paused });
@@ -28,13 +31,15 @@ export default function Metrics() {
           <span className={clsx("inline-flex h-10 items-center gap-2 rounded-xl border border-line-soft px-3 text-[13px] font-semibold", paused ? "text-faint" : "text-mint")}>
             <span className={clsx("relative h-2 w-2 rounded-full", paused ? "bg-faint" : "live-dot bg-mint")} />{paused ? "Paused" : "Live"}
           </span>
+          {admin ? <Pill tone="warn" className="h-10 px-3"><ShieldCheck size={14} />Admin</Pill>
+            : <Pill className="h-10 px-3" ><Eye size={14} />Read-only view</Pill>}
           <Button variant="secondary" icon={paused ? Play : Pause} onClick={() => setPaused((p) => !p)}>{paused ? "Resume" : "Pause"}</Button>
-          <LoadTest onDone={(r) => { setLoad(r); live.reload(); }} />
+          {admin && <LoadTest onDone={(r) => { setLoad(r); live.reload(); }} />}
         </>} />
 
       <ReviewCard live={live.data} models={models.data} load={load} />
 
-      <UsersSection paused={paused} />
+      {admin && <UsersSection paused={paused} />}
 
       <div className="mb-3 mt-9 flex flex-wrap items-end justify-between gap-3">
         <div><h2 className="display text-2xl font-semibold">API performance</h2><p className="text-[14px] text-muted">Every request except this page's own polling.</p></div>
@@ -43,7 +48,7 @@ export default function Metrics() {
       {live.error ? <Card><ErrorState error={live.error} onRetry={live.reload} /></Card> : <ApiSection d={live.data} load={load} />}
 
       <div className="mb-3 mt-9"><h2 className="display text-2xl font-semibold">Models</h2><p className="text-[14px] text-muted">Categoriser quality, what it's unsure about, and the offline benchmarks behind the forecaster and anomaly detector.</p></div>
-      {models.error ? <Card><ErrorState error={models.error} onRetry={models.reload} /></Card> : <ModelSection m={models.data} onRetrained={models.reload} />}
+      {models.error ? <Card><ErrorState error={models.error} onRetry={models.reload} /></Card> : <ModelSection m={models.data} onRetrained={models.reload} admin={admin} />}
     </>
   );
 }
@@ -161,7 +166,7 @@ function ApiSection({ d, load }) {
   const t = useTokens();
   if (!d) return <div className="grid grid-cols-2 gap-4 lg:grid-cols-6">{[0, 1, 2, 3, 4, 5].map((i) => <Skeleton key={i} className="h-28 rounded-[20px]" />)}</div>;
   const series = d.series.map((s) => ({ ...s, rpm: (s.count / d.bucket_s) * 60 }));
-  const maxP95 = Math.max(...d.endpoints.map((e) => e.p95), 1);
+  const maxP95 = Math.max(...(d.endpoints ?? []).map((e) => e.p95), 1);
   const totalStatus = Object.values(d.status).reduce((s, v) => s + v, 0) || 1;
   return (
     <div className="grid grid-cols-12 gap-4 lg:gap-5">
@@ -217,7 +222,7 @@ function ApiSection({ d, load }) {
         </div>
       </Card>
 
-      <Card className="col-span-12 md:col-span-6 xl:col-span-12">
+      {d.endpoints && <Card className="col-span-12 md:col-span-6 xl:col-span-12">
         <CardHeader title="Endpoints" hint="Busiest routes in the selected window" />
         {d.endpoints.length === 0 ? <p className="px-6 pb-6 pt-4 text-sm text-muted">No traffic yet. Browse the app or run the load test.</p> : (
           <div className="overflow-x-auto pb-3 pt-3">
@@ -245,13 +250,13 @@ function ApiSection({ d, load }) {
             </table>
           </div>
         )}
-      </Card>
+      </Card>}
     </div>
   );
 }
 
 /* ---------- Models section ---------- */
-function ModelSection({ m, onRetrained }) {
+function ModelSection({ m, onRetrained, admin }) {
   const t = useTokens();
   const toast = useToast();
   const [busy, setBusy] = useState(false);
@@ -291,8 +296,9 @@ function ModelSection({ m, onRetrained }) {
           ))}
         </dl>
         <div className="flex flex-col gap-3 border-t border-line-soft p-5 sm:flex-row sm:items-center sm:px-6">
-          <p className="flex-1 text-[13px] text-muted"><span className="num font-semibold text-text">{m.pending_corrections}</span> category corrections saved by users. Retraining weights them into the training set.</p>
-          <Button variant="secondary" icon={RefreshCw} loading={busy} onClick={retrain}>Retrain now</Button>
+          <p className="flex-1 text-[13px] text-muted"><span className="num font-semibold text-text">{m.pending_corrections}</span> trusted category corrections (demo account excluded, max 50 per user). Retraining weights them into the training set.</p>
+          {admin ? <Button variant="secondary" icon={RefreshCw} loading={busy} onClick={retrain}>Retrain now</Button>
+            : <span className="flex items-center gap-1.5 text-[12px] text-faint"><Lock size={13} />Retraining is admin-only</span>}
         </div>
       </Card>
 

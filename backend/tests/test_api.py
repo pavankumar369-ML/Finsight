@@ -112,9 +112,19 @@ def test_metrics_record_real_latency(client, demo):
     assert m["benchmarks"]["forecast"]["mape"] == 3.63
 
 
-def test_retrain_uses_corrections(client, demo):
-    r = client.post("/api/metrics/retrain", headers=demo).json()
-    assert r["trigger"] == "retrain" and r["n_corrections"] >= 1 and r["accuracy"] > 90
+@pytest.fixture(scope="module")
+def admin(client):
+    from app import main
+    main._attempts.clear()
+    r = client.post("/api/auth/register", json={"name": "Boss Admin", "email": "Boss@Example.com", "password": "secret12"})
+    return {"Authorization": "Bearer " + r.json()["token"]}
+
+
+def test_retrain_is_admin_only(client, demo, user, admin):
+    assert client.post("/api/metrics/retrain", headers=demo).status_code == 403
+    assert client.post("/api/metrics/retrain", headers=user).status_code == 403
+    r = client.post("/api/metrics/retrain", headers=admin).json()
+    assert r["trigger"] == "retrain" and r["accuracy"] > 90
 
 
 def test_forecast_cache_invalidates_on_write(client, user):
@@ -331,12 +341,13 @@ def test_import_pdf_text_lines_and_scanned(client, user):
     assert s.status_code == 422 and "scanned" in s.json()["detail"]
 
 
-def test_user_metrics(client, demo):
+def test_user_metrics(client, demo, admin):
     from app import main
     main._attempts.clear()
     client.post("/api/auth/register", json={"name": "Metric Person", "email": "metric@x.com", "password": "secret12"})
     client.post("/api/auth/login", json={"email": "metric@x.com", "password": "secret12"})
-    m = client.get("/api/metrics/users", headers=demo).json()
+    assert client.get("/api/metrics/users", headers=demo).status_code == 403
+    m = client.get("/api/metrics/users", headers=admin).json()
     assert m["registered_users"] >= 2 and m["active_now"] >= 1 and m["total_logins"] >= m["logins_today"] >= 2
     assert m["demo_sessions"] >= 1 and len(m["series"]) == 14
     assert m["activated_users"] >= 1 and m["activated_users"] <= m["registered_users"] and "returning_users" in m
@@ -347,3 +358,42 @@ def test_manage_reset_requires_confirmation(capsys):
     from app import manage
     assert manage.main(["manage", "reset"]) == 1
     assert "--yes" in capsys.readouterr().out
+
+
+def test_admin_flag_and_public_metrics(client, demo, admin):
+    assert client.get("/api/auth/me", headers=demo).json()["is_admin"] is False
+    assert client.get("/api/auth/me", headers=admin).json()["is_admin"] is True     # email match is case-insensitive
+    pub = client.get("/api/metrics/live", headers=demo).json()
+    adm = client.get("/api/metrics/live", headers=admin).json()
+    assert pub["endpoints"] is None and pub["admin"] is False and "p95" in pub
+    assert isinstance(adm["endpoints"], list) and adm["admin"] is True
+    assert client.get("/api/metrics/models", headers=demo).status_code == 200      # model quality stays public
+    assert client.post("/api/metrics/probe", headers=demo).status_code == 403
+
+
+def test_demo_corrections_never_train_the_model(client, demo):
+    from app.db import SessionLocal, Transaction
+    from app.services import training_corrections
+    from app.seed import DEMO_EMAIL
+    from app.db import User
+    t = client.get("/api/transactions?size=1", headers=demo).json()["items"][0]
+    client.patch(f"/api/transactions/{t['id']}", headers=demo, json={"category": "Others" if t["category"] != "Others" else "Food"})
+    db = SessionLocal()
+    demo_id = db.query(User.id).filter(User.email == DEMO_EMAIL).scalar()
+    demo_descs = {d for (d,) in db.query(Transaction.description).filter(Transaction.user_id == demo_id, Transaction.user_corrected.is_(True))}
+    assert demo_descs and not demo_descs & {d for d, _ in training_corrections(db)}
+    db.close()
+
+
+def test_general_rate_limit(client):
+    from app import main
+    old = main.API_LIMIT
+    main.API_LIMIT = 5
+    main._hits.clear()
+    try:
+        codes = [client.get("/api/meta").status_code for _ in range(7)]
+        assert codes[:5] == [200] * 5 and codes[-1] == 429
+        assert client.get("/api/health").status_code == 200        # health checks are never limited
+    finally:
+        main.API_LIMIT = old
+        main._hits.clear()

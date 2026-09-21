@@ -30,6 +30,28 @@ def cached(user_id, key, fn):
     return value
 
 
+MAX_CORRECTIONS_PER_USER = 50
+MIN_TXNS_FOR_TRUST = 10
+
+
+def training_corrections(db):
+    """Category corrections that are safe to learn from.
+    Guards against data poisoning: the shared demo account is excluded (anyone can edit it), only accounts
+    with real data count, and each account contributes at most its 50 most recent corrections."""
+    from sqlalchemy import func
+    from .db import User
+    from .seed import DEMO_EMAIL
+    demo_id = db.query(User.id).filter(User.email == DEMO_EMAIL).scalar()
+    trusted = [uid for uid, n in db.query(Transaction.user_id, func.count(Transaction.id)).group_by(Transaction.user_id).all()
+               if n >= MIN_TXNS_FOR_TRUST and uid != demo_id]
+    out = []
+    for uid in trusted:
+        rows = (db.query(Transaction).filter(Transaction.user_id == uid, Transaction.user_corrected.is_(True), Transaction.type == "expense")
+                .order_by(Transaction.id.desc()).limit(MAX_CORRECTIONS_PER_USER).all())
+        out += [(t.description, t.category) for t in rows]
+    return out
+
+
 def refresh_anomalies(db, user_id):
     txns = db.query(Transaction).filter(Transaction.user_id == user_id).all()
     flagged = detect_anomalies(txns)

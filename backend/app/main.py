@@ -24,11 +24,14 @@ async def lifespan(app: FastAPI):
     init_db()
     db = SessionLocal()
     try:
-        corrections = [(t.description, t.category) for t in
-                       db.query(Transaction).filter(Transaction.user_corrected.is_(True), Transaction.type == "expense")]
-        db.add(ModelRun(trigger="startup", **categorizer.train(corrections)))
+        from .services import training_corrections
+        db.add(ModelRun(trigger="startup", **categorizer.train(training_corrections(db))))
         db.commit()
-        ensure_demo(db)
+        demo = ensure_demo(db)
+        # warm the per-user cache so the first visitor (e.g. a recruiter waking a sleeping server) gets a fast dashboard
+        from .routers.analytics import dashboard, list_budgets, insights
+        for fn in (dashboard, list_budgets, insights):
+            fn(demo, db)
     finally:
         db.close()
     metrics.BENCH.update(benchmarks.run_all())
@@ -49,6 +52,8 @@ if SECRET.startswith("dev-secret") and os.getenv("RENDER"):
 
 _attempts = defaultdict(deque)
 AUTH_LIMIT, AUTH_WINDOW = 10, 300   # 10 sign-in/register attempts per 5 minutes per IP
+_hits = defaultdict(deque)
+API_LIMIT, API_WINDOW = int(os.getenv("API_RATE_LIMIT", "300")), 60   # requests per minute per IP, for all API calls
 
 
 @app.middleware("http")
@@ -56,8 +61,17 @@ async def timing(request: Request, call_next):
     t0 = time.perf_counter()
     status = 500
     try:
+        ip = (request.headers.get("x-forwarded-for") or (request.client.host if request.client else "?")).split(",")[0].strip()
+        if request.url.path.startswith("/api/") and request.url.path != "/api/health":
+            h, now = _hits[ip], time.time()
+            while h and h[0] < now - API_WINDOW:
+                h.popleft()
+            if len(h) >= API_LIMIT:
+                status = 429
+                return JSONResponse({"detail": "Too many requests. Slow down for a minute and try again."}, status_code=429,
+                                    headers={"Retry-After": "60"})
+            h.append(now)
         if request.method == "POST" and request.url.path in ("/api/auth/login", "/api/auth/register"):
-            ip = (request.headers.get("x-forwarded-for") or (request.client.host if request.client else "?")).split(",")[0].strip()
             q, now = _attempts[ip], time.time()
             while q and q[0] < now - AUTH_WINDOW:
                 q.popleft()

@@ -27,6 +27,15 @@ def create_token(user_id: int) -> str:
     return jwt.encode(payload, SECRET, algorithm=ALGO)
 
 
+def admin_emails():
+    """Admins are configured on the server only (ADMIN_EMAILS, comma-separated). There is no way to become admin via the API."""
+    return {e.strip().lower() for e in os.getenv("ADMIN_EMAILS", "").split(",") if e.strip()}
+
+
+def is_admin(user) -> bool:
+    return bool(user) and user.email.lower() in admin_emails()
+
+
 def current_user(creds: HTTPAuthorizationCredentials = Depends(bearer), db: Session = Depends(get_db)) -> User:
     if not creds:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Sign in to continue.")
@@ -41,4 +50,10 @@ def current_user(creds: HTTPAuthorizationCredentials = Depends(bearer), db: Sess
     if not user.last_seen or (now - user.last_seen).total_seconds() > 30:   # throttle writes: at most one per 30 s
         user.last_seen = now
         db.commit()
+    return user
+
+
+def admin_user(user: User = Depends(current_user)) -> User:
+    if not is_admin(user):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Only the FinSight admin can do this.")
     return user

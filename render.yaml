@@ -17,5 +17,7 @@ services:
         sync: false          # set to your Vercel URL, e.g. https://finsight.vercel.app
       - key: ALLOWED_ORIGIN_REGEX
         value: https://.*\.vercel\.app
+      - key: ADMIN_EMAILS
+        sync: false          # your email; unlocks retrain, load test and user stats on the Metrics page
       - key: DATABASE_URL
         sync: false          # optional Postgres URL (Neon). Without it, SQLite resets on every redeploy.

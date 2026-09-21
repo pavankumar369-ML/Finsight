@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from datetime import datetime
 from ..db import get_db, User, LoginEvent
-from ..auth import hash_password, verify_password, create_token, current_user
+from ..auth import hash_password, verify_password, create_token, current_user, is_admin
 from ..schemas import RegisterIn, LoginIn
 from ..seed import ensure_demo
 
@@ -19,7 +19,7 @@ def _record(db, user, method):
 
 
 def _out(user):
-    return {"token": create_token(user.id), "user": {"id": user.id, "name": user.name, "email": user.email}}
+    return {"token": create_token(user.id), "user": {"id": user.id, "name": user.name, "email": user.email, "is_admin": is_admin(user)}}
 
 
 @router.post("/register")
@@ -52,4 +52,4 @@ def demo(db: Session = Depends(get_db)):
 
 @router.get("/me")
 def me(user: User = Depends(current_user)):
-    return {"id": user.id, "name": user.name, "email": user.email}
+    return {"id": user.id, "name": user.name, "email": user.email, "is_admin": is_admin(user)}
