@@ -19,6 +19,14 @@ class PasswordChangeIn(BaseModel):
     new_password: str = Field(min_length=6, max_length=128)
 
 
+class BulkDeleteIn(BaseModel):
+    ids: list[int] = Field(min_length=1, max_length=1000)
+
+
+class DeleteAllIn(BaseModel):
+    confirm: str
+
+
 class TxnIn(BaseModel):
     date: date
     description: str = Field(min_length=2, max_length=200)

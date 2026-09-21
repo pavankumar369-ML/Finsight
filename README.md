@@ -54,6 +54,7 @@ pytest -q
 | **PDF import (v3.1)** | Text-based bank e-statements across many pages; ruled tables or plain text lines; password-protected PDFs (the dialog asks for the password); clear message for scanned PDFs |
 | **User metrics (v3.1)** | Metrics page shows registered, activated (imported or added data) and returning users, active now (last 5 min), active today / 7 days, sign-ins, and a 14-day chart. Aggregate counts only |
 | **Production (v3)** | Postgres via `DATABASE_URL`, CORS from env, sign-in rate limiting (10 attempts / 5 min), security headers, Render blueprint, Vercel config |
+| **Import management (v3.6)** | Every import is a batch: undo a wrong file in one click (right after importing, or later from **Import history**). Importing overlapping files merges them and skips duplicates. Select several rows to delete at once, or delete all transactions (type DELETE to confirm) |
 | **Export (v2)** | Download the filtered transaction list as CSV |
 | UI | Dark and light themes, responsive down to phones, keyboard shortcut **N** to add a transaction, reduced-motion support |
 
@@ -91,7 +92,7 @@ backend/
     manage.py            admin commands: stats, reset database, reset chats
     statement_parser.py  CSV/Excel reader: header detection, column mapping, amounts in words
     ml/ml_insights.py    K-Means segments, regression trends, variance drivers, what-if base
-  tests/test_api.py      39 API tests (incl. password change, forecast method selection, admin access control, data-poisoning guard, rate limiting, assistant intent understanding, Excel and PDF import, password PDFs, ML insights, user metrics, rate limit)
+  tests/test_api.py      41 API tests (incl. import undo and bulk delete, password change, forecast method selection, admin access control, data-poisoning guard, rate limiting, assistant intent understanding, Excel and PDF import, password PDFs, ML insights, user metrics, rate limit)
 frontend/
   src/
     pages/               Login, Dashboard, Transactions, Assistant, Budgets, Goals, Insights, Metrics

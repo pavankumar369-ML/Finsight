@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { FileUp, FileSpreadsheet, Download, AlertTriangle, Lock } from "lucide-react";
+import { FileUp, FileSpreadsheet, Download, AlertTriangle, Lock, Undo2 } from "lucide-react";
 import clsx from "clsx";
 import Modal from "./Modal";
 import { Button, CountUp } from "./ui";
@@ -17,6 +17,15 @@ export default function ImportCsv({ open, onClose }) {
   const [password, setPassword] = useState("");
   const [locked, setLocked] = useState("");      // server message when a PDF needs a password
   const isPdf = file?.name?.toLowerCase().endsWith(".pdf");
+  const [undoing, setUndoing] = useState(false);
+  async function undoImport() {
+    setUndoing(true);
+    try {
+      const r = await api(`/imports/${result.import_id}`, { method: "DELETE" });
+      toast(`Import undone. Removed ${r.deleted} transaction${r.deleted === 1 ? "" : "s"}.`, { tone: "info" });
+      dataChanged(); setResult(null); setFile(null);
+    } catch (e) { toast(e.message, { tone: "bad" }); } finally { setUndoing(false); }
+  }
   const [result, setResult] = useState(null);
 
   const close = () => { onClose(); setTimeout(() => { setFile(null); setResult(null); setPassword(""); setLocked(""); }, 250); };
@@ -143,6 +152,7 @@ export default function ImportCsv({ open, onClose }) {
               </details>
             )}
             <div className="flex justify-end gap-2">
+              {result.import_id && <Button variant="ghost" className="mr-auto text-coral hover:text-coral" icon={Undo2} loading={undoing} onClick={undoImport}>Undo this import</Button>}
               <Button variant="secondary" onClick={() => { setFile(null); setResult(null); }}>Import another</Button>
               <Button onClick={close}>Done</Button>
             </div>

@@ -49,6 +49,18 @@ class Transaction(Base):
     user_corrected = Column(Boolean, default=False)
     is_anomaly = Column(Boolean, default=False)
     anomaly_reason = Column(String(160), nullable=True)
+    import_id = Column(Integer, ForeignKey("import_batches.id"), nullable=True, index=True)   # which file it came from
+
+
+class ImportBatch(Base):
+    __tablename__ = "import_batches"
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=False)
+    filename = Column(String(200))
+    file_type = Column(String(10))
+    imported = Column(Integer, default=0)
+    duplicates = Column(Integer, default=0)
+    created_at = Column(DateTime, default=datetime.utcnow)
 
 
 class Budget(Base):

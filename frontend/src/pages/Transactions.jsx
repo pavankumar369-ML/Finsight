@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { AnimatePresence, motion } from "motion/react";
-import { AlertOctagon, ChevronLeft, ChevronRight, Download, Pencil, Plus, Search, SearchX, Trash2, Upload, X } from "lucide-react";
+import { AlertOctagon, ChevronLeft, ChevronRight, Download, History, Pencil, Plus, Search, SearchX, Trash2, Upload, X } from "lucide-react";
+import ManageImports from "../components/ManageImports";
+import Modal from "../components/Modal";
+import { useAuth } from "../components/Auth";
 import clsx from "clsx";
 import { api, apiUrl, dataChanged, getToken } from "../lib/api";
 import { useApi, useDebounced } from "../lib/hooks";
@@ -44,6 +47,12 @@ export default function Transactions() {
   const anomaly = params.get("anomaly") === "1";
   const page = Number(params.get("page") ?? 1);
   const [hidden, setHidden] = useState(new Set());
+  const [selected, setSelected] = useState(new Set());
+  const [confirmBulk, setConfirmBulk] = useState(false);
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [importsOpen, setImportsOpen] = useState(false);
+  const { user } = useAuth();
+  const isDemo = user?.email === "demo@finsight.app";
   const timers = useRef({});
 
   const update = (patch) => {
@@ -63,6 +72,7 @@ export default function Transactions() {
     return `/transactions?${s}`;
   }, [dq, type, category, month, anomaly, page]);
   const { data, error, loading, reload } = useApi(path);
+  useEffect(() => { setSelected(new Set()); }, [path]);
   const items = (data?.items ?? []).filter((t) => !hidden.has(t.id));
   const pages = data ? Math.max(1, Math.ceil(data.total / SIZE)) : 1;
   const filtered = dq || type || category || month || anomaly;
@@ -87,6 +97,19 @@ export default function Transactions() {
       reload(); dataChanged();
     } catch (e) { toast(e.message, { tone: "bad" }); }
   }
+  const toggle = (id) => setSelected((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  const pageIds = (data?.items ?? []).filter((t) => !hidden.has(t.id)).map((t) => t.id);
+  const allOnPage = pageIds.length > 0 && pageIds.every((id) => selected.has(id));
+  const toggleAll = () => setSelected((s) => { const n = new Set(s); allOnPage ? pageIds.forEach((id) => n.delete(id)) : pageIds.forEach((id) => n.add(id)); return n; });
+  async function bulkDelete() {
+    setBulkBusy(true);
+    try {
+      const r = await api("/transactions/bulk-delete", { method: "POST", body: { ids: [...selected] } });
+      toast(`Deleted ${r.deleted} transaction${r.deleted === 1 ? "" : "s"}.`, { tone: "info" });
+      setSelected(new Set()); setConfirmBulk(false); reload(); dataChanged();
+    } catch (e) { toast(e.message, { tone: "bad" }); } finally { setBulkBusy(false); }
+  }
+
   function remove(t) {
     setHidden((h) => new Set(h).add(t.id));
     timers.current[t.id] = setTimeout(async () => {
@@ -103,7 +126,7 @@ export default function Transactions() {
   return (
     <>
       <PageHeader title="Transactions" subtitle="Every category here was predicted by the model. Click a category to correct it."
-        actions={<><Button variant="secondary" icon={Download} loading={exporting} onClick={exportCsv}>Export</Button><Button variant="secondary" icon={Upload} onClick={actions.importCsv}>Import</Button><Button icon={Plus} onClick={actions.addTxn}>Add</Button></>} />
+        actions={<><Button variant="secondary" icon={History} onClick={() => setImportsOpen(true)}>Import history</Button><Button variant="secondary" icon={Download} loading={exporting} onClick={exportCsv}>Export</Button><Button variant="secondary" icon={Upload} onClick={actions.importCsv}>Import</Button><Button icon={Plus} onClick={actions.addTxn}>Add</Button></>} />
 
       <Card className="mb-4 p-3 sm:p-4">
         <div className="flex flex-col gap-3 xl:flex-row xl:items-center">
@@ -144,7 +167,19 @@ export default function Transactions() {
             : <Empty icon={Upload} title="No transactions yet" body="Import a bank statement or add your first one." action={<Button icon={Upload} onClick={actions.importCsv}>Import CSV</Button>} />
         ) : (
           <>
-            <div className="hidden grid-cols-[88px_minmax(0,1fr)_170px_70px_120px_80px] gap-3 border-b border-line-soft px-6 py-3 text-[12px] font-semibold text-faint md:grid">
+            <AnimatePresence>
+              {selected.size > 0 && (
+                <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} className="overflow-hidden">
+                  <div className="flex items-center gap-3 border-b border-line-soft bg-accent-soft px-6 py-2.5">
+                    <span className="num text-[13px] font-semibold text-text">{selected.size} selected</span>
+                    <Button size="sm" variant="danger" icon={Trash2} onClick={() => setConfirmBulk(true)}>Delete selected</Button>
+                    <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>Clear</Button>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+            <div className="hidden grid-cols-[24px_88px_minmax(0,1fr)_170px_70px_120px_80px] items-center gap-3 border-b border-line-soft px-6 py-3 text-[12px] font-semibold text-faint md:grid">
+              <input type="checkbox" checked={allOnPage} onChange={toggleAll} aria-label="Select all on this page" className="h-4 w-4 cursor-pointer accent-[var(--accent)]" />
               <span>Date</span><span>Description</span><span>Category</span><span>Model</span><span className="text-right">Amount</span><span />
             </div>
             <ul className={clsx(loading && "opacity-60 transition-opacity")}>
@@ -152,7 +187,8 @@ export default function Transactions() {
                 {items.map((t) => (
                   <motion.li key={t.id} layout="position" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0, height: 0 }}
                     className="group border-b border-line-soft last:border-0">
-                    <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 px-4 py-3 md:grid-cols-[88px_minmax(0,1fr)_170px_70px_120px_80px] md:px-6">
+                    <div className={clsx("grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 px-4 py-3 md:grid-cols-[24px_88px_minmax(0,1fr)_170px_70px_120px_80px] md:px-6", selected.has(t.id) && "bg-accent-soft/60")}>
+                      <input type="checkbox" checked={selected.has(t.id)} onChange={() => toggle(t.id)} aria-label={`Select ${t.description}`} className="hidden h-4 w-4 cursor-pointer accent-[var(--accent)] md:block" />
                       <span className="num hidden text-[13px] text-muted md:block">{dateLabel(t.date)}</span>
                       <button className="md:hidden" onClick={() => actions.editTxn(t)} aria-label={`Edit ${t.description}`}><CategoryIcon category={t.category} size={34} /></button>
                       <div className="min-w-0">
@@ -191,6 +227,14 @@ export default function Transactions() {
           </div>
         </div>
       )}
+      <ManageImports open={importsOpen} onClose={() => setImportsOpen(false)} isDemo={isDemo} />
+      <Modal open={confirmBulk} onClose={() => setConfirmBulk(false)} title={`Delete ${selected.size} transaction${selected.size === 1 ? "" : "s"}?`} subtitle="This can't be undone." width={420}>
+        <p className="text-sm text-muted">Budgets, forecasts and insights will update straight away.</p>
+        <div className="mt-5 flex justify-end gap-2">
+          <Button variant="ghost" onClick={() => setConfirmBulk(false)}>Cancel</Button>
+          <Button variant="danger" icon={Trash2} loading={bulkBusy} onClick={bulkDelete}>Delete {selected.size}</Button>
+        </div>
+      </Modal>
     </>
   );
 }

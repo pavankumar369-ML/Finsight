@@ -5,9 +5,9 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Q
 from fastapi.responses import PlainTextResponse
 from sqlalchemy import or_, func
 from sqlalchemy.orm import Session
-from ..db import get_db, Transaction, User
+from ..db import get_db, Transaction, User, ImportBatch
 from ..auth import current_user
-from ..schemas import TxnIn, TxnPatch, SuggestIn
+from ..schemas import TxnIn, TxnPatch, SuggestIn, BulkDeleteIn, DeleteAllIn
 from ..ml.categorizer import categorizer
 from ..ml.dataset import EXPENSE_CATEGORIES, INCOME_CATEGORIES
 from ..services import refresh_anomalies
@@ -19,7 +19,8 @@ router = APIRouter(prefix="/api", tags=["transactions"])
 def ser(t: Transaction):
     return {"id": t.id, "date": t.date.isoformat(), "description": t.description, "amount": t.amount,
             "type": t.type, "category": t.category, "confidence": t.confidence, "source": t.source,
-            "user_corrected": t.user_corrected, "is_anomaly": t.is_anomaly, "anomaly_reason": t.anomaly_reason}
+            "user_corrected": t.user_corrected, "is_anomaly": t.is_anomaly, "anomaly_reason": t.anomaly_reason,
+            "import_id": t.import_id}
 
 
 def _valid_category(typ, cat):
@@ -161,6 +162,55 @@ def delete_txn(txn_id: int, user: User = Depends(current_user), db: Session = De
     refresh_anomalies(db, user.id)
 
 
+def _demo_guard(user, what):
+    from ..seed import DEMO_EMAIL
+    if user.email == DEMO_EMAIL:
+        raise HTTPException(403, f"The demo account is shared with everyone, so {what} is turned off. Create your own account to try it.")
+
+
+@router.post("/transactions/bulk-delete")
+def bulk_delete(body: BulkDeleteIn, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    q = db.query(Transaction).filter(Transaction.user_id == user.id, Transaction.id.in_(body.ids))   # only this user's rows
+    n = q.delete(synchronize_session=False)
+    db.commit()
+    refresh_anomalies(db, user.id)
+    return {"deleted": n}
+
+
+@router.post("/transactions/delete-all")
+def delete_all(body: DeleteAllIn, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    _demo_guard(user, "deleting all transactions")
+    if body.confirm.strip() != "DELETE":
+        raise HTTPException(422, "Type DELETE (in capitals) to confirm.")
+    n = db.query(Transaction).filter(Transaction.user_id == user.id).delete(synchronize_session=False)
+    db.query(ImportBatch).filter(ImportBatch.user_id == user.id).delete(synchronize_session=False)
+    db.commit()
+    refresh_anomalies(db, user.id)
+    return {"deleted": n}
+
+
+@router.get("/imports")
+def list_imports(user: User = Depends(current_user), db: Session = Depends(get_db)):
+    batches = db.query(ImportBatch).filter(ImportBatch.user_id == user.id).order_by(ImportBatch.id.desc()).limit(50).all()
+    remaining = dict(db.query(Transaction.import_id, func.count(Transaction.id))
+                     .filter(Transaction.user_id == user.id, Transaction.import_id.isnot(None)).group_by(Transaction.import_id).all())
+    return {"imports": [{"id": b.id, "filename": b.filename, "file_type": b.file_type, "imported": b.imported,
+                         "duplicates": b.duplicates, "remaining": remaining.get(b.id, 0),
+                         "created_at": b.created_at.isoformat() + "Z"} for b in batches]}
+
+
+@router.delete("/imports/{batch_id}")
+def undo_import(batch_id: int, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    b = db.get(ImportBatch, batch_id)
+    if not b or b.user_id != user.id:
+        raise HTTPException(404, "Import not found.")
+    n = db.query(Transaction).filter(Transaction.user_id == user.id, Transaction.import_id == b.id).delete(synchronize_session=False)
+    db.delete(b)
+    db.commit()
+    refresh_anomalies(db, user.id)
+    return {"deleted": n, "filename": b.filename}
+
+
 SAMPLE_CSV = """Date,Narration,Debit,Credit
 01/09/2026,NEFT/ACME TECHNOLOGIES SALARY,,68000
 02/09/2026,UPI/SWIGGY/VELLORE/882731,349,
@@ -229,10 +279,19 @@ async def import_statement(file: UploadFile = File(...), password: str = Form(""
         breakdown[cat] = breakdown.get(cat, 0) + 1
         new.append(Transaction(user_id=user.id, date=d, description=desc, amount=amt, type=typ,
                                category=cat, confidence=round(conf, 4), source="csv"))
+    batch = None
+    if new:
+        batch = ImportBatch(user_id=user.id, filename=(file.filename or "statement")[:200],
+                            file_type="PDF" if name.endswith(".pdf") else "Excel" if name.endswith((".xlsx", ".xlsm", ".xls")) else "CSV",
+                            imported=len(new), duplicates=dupes)
+        db.add(batch)
+        db.flush()
+        for t in new:
+            t.import_id = batch.id
     db.add_all(new)
     db.commit()
     flagged = refresh_anomalies(db, user.id)
-    return {"imported": len(new), "duplicates": dupes, "errors": errors[:20], "error_count": len(errors),
+    return {"import_id": batch.id if batch else None, "imported": len(new), "duplicates": dupes, "errors": errors[:20], "error_count": len(errors),
             "low_confidence": int(low), "breakdown": breakdown, "anomalies_total": flagged,
             "detected_columns": parsed_file["detected"], "header_row": parsed_file["header_row"],
             "amounts_from_words": parsed_file["amounts_from_words"],

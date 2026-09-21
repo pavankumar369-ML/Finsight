@@ -441,3 +441,40 @@ def test_manage_set_password(monkeypatch, capsys, client):
     monkeypatch.setattr("getpass.getpass", lambda prompt="": next(answers2))
     assert manage.main(["manage", "set-password", "forgot@x.com"]) == 1 and "didn't match" in capsys.readouterr().out
     main._attempts.clear()
+
+
+def _fresh(client, email):
+    from app import main
+    main._attempts.clear()
+    return {"Authorization": "Bearer " + client.post("/api/auth/register", json={"name": "Clean Up", "email": email, "password": "secret12"}).json()["token"]}
+
+
+def test_import_batches_undo_and_merge(client):
+    h = _fresh(client, "batches@x.com")
+    a = b"Date,Narration,Debit,Credit\n01/06/2026,UPI/SWIGGY/B1,300,\n02/06/2026,UPI/UBER/B1,200,\n"
+    b = b"Date,Narration,Debit,Credit\n02/06/2026,UPI/UBER/B1,200,\n03/06/2026,UPI/ZEPTO/B2,500,\n"   # 1 overlap
+    r1 = client.post("/api/transactions/import", headers=h, files={"file": ("june_a.csv", io.BytesIO(a), "text/csv")}).json()
+    r2 = client.post("/api/transactions/import", headers=h, files={"file": ("june_b.csv", io.BytesIO(b), "text/csv")}).json()
+    assert r1["imported"] == 2 and r2["imported"] == 1 and r2["duplicates"] == 1          # merged, overlap skipped
+    assert client.get("/api/transactions", headers=h).json()["total"] == 3
+    imps = client.get("/api/imports", headers=h).json()["imports"]
+    assert [i["filename"] for i in imps] == ["june_b.csv", "june_a.csv"] and imps[0]["remaining"] == 1
+    again = client.post("/api/transactions/import", headers=h, files={"file": ("june_a.csv", io.BytesIO(a), "text/csv")}).json()
+    assert again["imported"] == 0 and again["import_id"] is None                          # nothing new, no empty batch
+    u = client.delete(f"/api/imports/{r1['import_id']}", headers=h).json()
+    assert u["deleted"] == 2 and client.get("/api/transactions", headers=h).json()["total"] == 1
+    other = _fresh(client, "intruder@x.com")
+    assert client.delete(f"/api/imports/{r2['import_id']}", headers=other).status_code == 404
+
+
+def test_bulk_and_delete_all(client, demo):
+    h = _fresh(client, "bulk@x.com")
+    ids = [client.post("/api/transactions", headers=h, json={"date": "2026-06-0" + str(i), "description": f"UPI/SWIGGY/BK{i}", "amount": 100 + i}).json()["id"] for i in range(1, 6)]
+    demo_id = client.get("/api/transactions?size=1", headers=demo).json()["items"][0]["id"]
+    r = client.post("/api/transactions/bulk-delete", headers=h, json={"ids": ids[:3] + [demo_id]}).json()
+    assert r["deleted"] == 3                                       # someone else's id is silently ignored
+    assert client.get(f"/api/transactions?size=200", headers=demo).json()["items"]           # demo untouched
+    assert client.post("/api/transactions/delete-all", headers=h, json={"confirm": "delete"}).status_code == 422
+    assert client.post("/api/transactions/delete-all", headers=h, json={"confirm": "DELETE"}).json()["deleted"] == 2
+    assert client.get("/api/transactions", headers=h).json()["total"] == 0
+    assert client.post("/api/transactions/delete-all", headers=demo, json={"confirm": "DELETE"}).status_code == 403
