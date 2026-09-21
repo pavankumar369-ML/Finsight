@@ -7,6 +7,8 @@ from app.main import app
 @pytest.fixture(scope="module")
 def client():
     with TestClient(app) as c:
+        from conftest import _wait_ready
+        _wait_ready(c)
         yield c
 
 

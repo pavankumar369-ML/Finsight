@@ -92,7 +92,7 @@ backend/
     manage.py            admin commands: stats, reset database, reset chats
     statement_parser.py  CSV/Excel reader: header detection, column mapping, amounts in words
     ml/ml_insights.py    K-Means segments, regression trends, variance drivers, what-if base
-  tests/test_api.py      41 API tests (incl. import undo and bulk delete, password change, forecast method selection, admin access control, data-poisoning guard, rate limiting, assistant intent understanding, Excel and PDF import, password PDFs, ML insights, user metrics, rate limit)
+  tests/test_api.py      41 API tests (incl. background startup readiness, import undo and bulk delete, password change, forecast method selection, admin access control, data-poisoning guard, rate limiting, assistant intent understanding, Excel and PDF import, password PDFs, ML insights, user metrics, rate limit)
 frontend/
   src/
     pages/               Login, Dashboard, Transactions, Assistant, Budgets, Goals, Insights, Metrics
@@ -154,6 +154,9 @@ Set admins with `ADMIN_EMAILS` (comma-separated) in `backend/.env` locally, or i
 | `python -m app.manage reset-demo --yes` | Restores the shared demo account (if visitors changed or deleted its data) |
 | `python -m app.manage admins` | Shows which emails have admin access |
 | `python -m app.manage set-password EMAIL` | Sets a new password for an account (for forgotten passwords). Asks twice, hidden as you type |
+
+## Fast startup on slow free-tier CPUs
+Training the ML model, seeding the demo account and warming caches all happen in a background task after the server has already opened its port, not before. This matters on Render's free plan (0.1 vCPU): without it, the whole sequence can take longer than Render's 5-minute port-scan timeout and the deploy fails. `GET /api/health` returns `"ready": false` for the few seconds this takes; the few endpoints that need the trained model (creating or importing a transaction, category suggestions, opening the demo account) return a friendly `503` with `Retry-After` during that window instead of erroring.
 
 ## Database upgrades are automatic
 New columns (for example the user-activity fields in v3.1) are added to an existing `finsight.db` or Postgres database on startup, so existing data is kept. There's no need to delete the database when updating.

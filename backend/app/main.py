@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from .db import init_db, SessionLocal, ModelRun, Transaction, engine
 from .ml.categorizer import categorizer
 from .ml import benchmarks
-from . import metrics_store
+from . import metrics_store, state
 from .routers import auth, transactions, analytics, metrics, goals, notifications, assistant
 from .seed import ensure_demo
 
@@ -19,9 +19,10 @@ async def _flusher():
         await asyncio.to_thread(metrics_store.flush)
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    init_db()
+def _warm_up_sync():
+    """Everything CPU-heavy: model training, demo seeding, benchmarks, cache warm-up.
+    Runs in a thread after the app has already started accepting requests, so a slow
+    free-tier CPU (e.g. Render's 0.1 vCPU) can't make the platform's port-scan time out."""
     db = SessionLocal()
     try:
         from .services import training_corrections
@@ -35,14 +36,22 @@ async def lifespan(app: FastAPI):
     finally:
         db.close()
     metrics.BENCH.update(benchmarks.run_all())
+    state.READY = True
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    init_db()                    # fast: create/alter tables only
     metrics_store.load_history()
     task = asyncio.create_task(_flusher())
+    warm = asyncio.create_task(asyncio.to_thread(_warm_up_sync))
     yield
     task.cancel()
+    warm.cancel()
     metrics_store.flush()
 
 
-app = FastAPI(title="FinSight API", version="3.6.0", lifespan=lifespan)
+app = FastAPI(title="FinSight API", version="3.7.0", lifespan=lifespan)
 ORIGINS = [o.strip().rstrip("/") for o in os.getenv("ALLOWED_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173").split(",") if o.strip()]
 app.add_middleware(CORSMiddleware, allow_origins=ORIGINS, allow_origin_regex=os.getenv("ALLOWED_ORIGIN_REGEX") or None,
                    allow_methods=["*"], allow_headers=["*"], expose_headers=["Content-Disposition"], max_age=600)
@@ -93,7 +102,7 @@ async def timing(request: Request, call_next):
 
 @app.get("/api/health")
 def health():
-    return {"ok": True, "model_ready": categorizer.pipe is not None, "version": app.version,
+    return {"ok": True, "model_ready": categorizer.pipe is not None, "ready": state.READY, "version": app.version,
             "database": "postgres" if not str(engine.url).startswith("sqlite") else "sqlite"}
 
 

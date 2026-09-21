@@ -56,6 +56,9 @@ From your laptop, point the reset command at the Neon database once (PowerShell)
 `$env:DATABASE_URL="<your Neon connection string>"; python -m app.manage reset --yes`
 Or in Neon's dashboard: **Branches → Reset from parent**, or run `DROP SCHEMA public CASCADE; CREATE SCHEMA public;` in the SQL Editor, then restart the Render service.
 
+## If the Render deploy fails with "Port scan timeout reached"
+This is fixed from v3.7 onward: the server opens its port immediately and trains the model in the background, so this shouldn't happen anymore. If you're deploying an older version, redeploy from the latest code. You can confirm the fix is active by checking `RENDER_URL/api/health` shortly after a deploy — it should return `"ready": false` for a few seconds, then `true`, rather than the page failing to load at all.
+
 ## Troubleshooting
 | Symptom | Fix |
 |---|---|

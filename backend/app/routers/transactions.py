@@ -7,6 +7,7 @@ from sqlalchemy import or_, func
 from sqlalchemy.orm import Session
 from ..db import get_db, Transaction, User, ImportBatch
 from ..auth import current_user
+from ..state import require_ready
 from ..schemas import TxnIn, TxnPatch, SuggestIn, BulkDeleteIn, DeleteAllIn
 from ..ml.categorizer import categorizer
 from ..ml.dataset import EXPENSE_CATEGORIES, INCOME_CATEGORIES
@@ -35,7 +36,7 @@ def meta():
 
 
 @router.post("/categorize/suggest")
-def suggest(body: SuggestIn, user: User = Depends(current_user)):
+def suggest(body: SuggestIn, user: User = Depends(current_user), _=Depends(require_ready)):
     t0 = time.perf_counter()
     cat, conf, top = categorizer.predict([body.description])[0]
     return {"category": cat, "confidence": conf, "top": [{"category": c, "p": p} for c, p in top],
@@ -107,7 +108,7 @@ def list_txns(q: str = "", category: str = "", type: str = "", month: str = "", 
 
 
 @router.post("/transactions", status_code=201)
-def create_txn(body: TxnIn, user: User = Depends(current_user), db: Session = Depends(get_db)):
+def create_txn(body: TxnIn, user: User = Depends(current_user), db: Session = Depends(get_db), _=Depends(require_ready)):
     conf, corrected = 1.0, False
     if body.category:
         _valid_category(body.type, body.category)
@@ -237,7 +238,7 @@ def _pick(cols, *names):
 
 
 @router.post("/transactions/import")
-async def import_statement(file: UploadFile = File(...), password: str = Form(""), user: User = Depends(current_user), db: Session = Depends(get_db)):
+async def import_statement(file: UploadFile = File(...), password: str = Form(""), user: User = Depends(current_user), db: Session = Depends(get_db), _=Depends(require_ready)):
     t0 = time.perf_counter()
     name = (file.filename or "").lower()
     if not name.endswith((".csv", ".txt", ".xlsx", ".xlsm", ".xls", ".pdf")):

@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from datetime import datetime
 from ..db import get_db, User, LoginEvent
 from ..auth import hash_password, verify_password, create_token, current_user, is_admin
+from ..state import require_ready
 from ..schemas import RegisterIn, LoginIn, PasswordChangeIn
 from ..seed import ensure_demo
 
@@ -44,7 +45,7 @@ def login(body: LoginIn, db: Session = Depends(get_db)):
 
 
 @router.post("/demo")
-def demo(db: Session = Depends(get_db)):
+def demo(db: Session = Depends(get_db), _=Depends(require_ready)):
     user = ensure_demo(db)
     _record(db, user, "demo")
     return _out(user)
