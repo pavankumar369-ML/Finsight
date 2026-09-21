@@ -397,3 +397,18 @@ def test_general_rate_limit(client):
     finally:
         main.API_LIMIT = old
         main._hits.clear()
+
+
+def test_forecast_series_chooses_honest_method():
+    import warnings
+    from statsmodels.tools.sm_exceptions import ConvergenceWarning
+    from app.ml.analytics import _forecast_series
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", ConvergenceWarning)       # no convergence warning may escape
+        warnings.simplefilter("error", RuntimeWarning)
+        assert _forecast_series([15000] * 6) == (15000, "constant")
+        v, m = _forecast_series([1000, 1200, 1100, 1300])         # too short for Holt-Winters
+        assert m == "weighted-mean" and abs(v - (1200 + 2 * 1100 + 3 * 1300) / 6) < 1e-6
+        assert _forecast_series([0, 0, 500, 0, 0, 400])[1] == "weighted-mean"   # mostly empty
+        v, m = _forecast_series([8000, 8400, 8100, 8900, 8600, 9200, 9000, 9500])
+        assert m.startswith(("holt-winters", "weighted-mean")) and 4000 < v < 14250

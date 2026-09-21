@@ -60,7 +60,7 @@ pytest -q
 ## ML components
 
 - **Categoriser:** TF-IDF character n-grams (2–4) + Logistic Regression, trained on 4,697 labelled Indian statement descriptions across 11 categories, with 6% realistic label noise. User corrections are stored and weighted into training when you click **Retrain now**.
-- **Forecaster:** Holt-Winters exponential smoothing per category on completed months; anomalies excluded; mean fallback for short histories.
+- **Forecaster:** Holt-Winters exponential smoothing per category on completed months, used only when a category has at least 6 months of data and isn't mostly empty. Otherwise, or if the optimiser fails to converge, a recency-weighted mean of the last 3 months is used; constant series (like fixed rent) are returned as-is. Anomalies are excluded.
 - **Anomaly detector:** Isolation Forest on log amount, category, weekday and amount relative to the category median; only flags spends at least 2.5× typical, so alerts stay trustworthy.
 - **Health score (0–100):** savings rate (40) + budgets on track (30) + spending stability (30).
 
@@ -91,7 +91,7 @@ backend/
     manage.py            admin commands: stats, reset database, reset chats
     statement_parser.py  CSV/Excel reader: header detection, column mapping, amounts in words
     ml/ml_insights.py    K-Means segments, regression trends, variance drivers, what-if base
-  tests/test_api.py      36 API tests (incl. admin access control, data-poisoning guard, rate limiting, assistant intent understanding, Excel and PDF import, password PDFs, ML insights, user metrics, rate limit)
+  tests/test_api.py      37 API tests (incl. forecast method selection, admin access control, data-poisoning guard, rate limiting, assistant intent understanding, Excel and PDF import, password PDFs, ML insights, user metrics, rate limit)
 frontend/
   src/
     pages/               Login, Dashboard, Transactions, Assistant, Budgets, Goals, Insights, Metrics

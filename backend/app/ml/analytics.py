@@ -6,7 +6,6 @@ import numpy as np
 import pandas as pd
 from sklearn.ensemble import IsolationForest
 
-warnings.filterwarnings("ignore")
 
 
 def month_key(d: date) -> str:
@@ -20,24 +19,47 @@ def monthly_frame(txns):
                           "amount": t.amount} for t in txns])
 
 
+MIN_MONTHS_FOR_HW = 6      # damped Holt-Winters estimates ~4 parameters; fewer points than this is an unreliable fit
+
+
+def _weighted_recent(vals):
+    """Recency-weighted mean of the last 3 months (weights 1, 2, 3)."""
+    recent = vals[-3:]
+    return float(np.average(recent, weights=np.arange(1, len(recent) + 1)))
+
+
 def _forecast_series(values):
-    """values: monthly totals oldest->newest (complete months). Returns (forecast, method)."""
+    """values: monthly totals oldest->newest (complete months). Returns (forecast, method).
+
+    Holt-Winters only when the series can support it: at least 6 months and not mostly empty.
+    If the optimiser fails to converge, its parameters aren't trustworthy, so we fall back
+    to a recency-weighted mean instead of using a shaky fit."""
     vals = [float(v) for v in values]
     if len(vals) == 0:
         return 0.0, "no-data"
-    if len(vals) < 4:
-        return float(np.mean(vals)), "mean"
+    zeros = sum(1 for v in vals if v == 0)
+    if max(vals) - min(vals) < 1e-9:
+        return vals[-1], "constant"          # e.g. fixed rent: nothing to model
+    if len(vals) < MIN_MONTHS_FOR_HW or zeros >= len(vals) / 2:
+        return _weighted_recent(vals), "weighted-mean"
     try:
+        from statsmodels.tools.sm_exceptions import ConvergenceWarning
         from statsmodels.tsa.holtwinters import ExponentialSmoothing
-        model = ExponentialSmoothing(np.array(vals), trend="add", damped_trend=True,
-                                     initialization_method="estimated").fit()
+        # np.errstate: statsmodels also computes AIC/BIC, which hit log(0) on near-perfect fits; we don't use them
+        with warnings.catch_warnings(record=True) as caught, np.errstate(divide="ignore", invalid="ignore"):
+            warnings.simplefilter("always", ConvergenceWarning)
+            model = ExponentialSmoothing(np.array(vals), trend="add", damped_trend=True,
+                                         initialization_method="estimated").fit()
+        if any(issubclass(w.category, ConvergenceWarning) for w in caught):
+            return _weighted_recent(vals), "weighted-mean (fit did not converge)"
         f = float(model.forecast(1)[0])
+        if not np.isfinite(f):
+            return _weighted_recent(vals), "weighted-mean"
         # guard against wild extrapolation on short histories
         lo, hi = min(vals) * 0.5, max(vals) * 1.5
         return max(lo, min(hi, f)), "holt-winters"
     except Exception:
-        w = np.arange(1, len(vals[-3:]) + 1)
-        return float(np.average(vals[-3:], weights=w)), "weighted-mean"
+        return _weighted_recent(vals), "weighted-mean"
 
 
 def forecast(txns, today: date):

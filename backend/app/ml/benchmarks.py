@@ -15,7 +15,11 @@ def run_all():
                        + np.random.normal(0, 400, n), index=idx).clip(lower=1000)
     from statsmodels.tsa.holtwinters import ExponentialSmoothing
     t0 = time.perf_counter()
-    fit = ExponentialSmoothing(series[:-4], trend="add", seasonal="add", seasonal_periods=12).fit()
+    import warnings
+    from statsmodels.tools.sm_exceptions import ConvergenceWarning
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", ConvergenceWarning)
+        fit = ExponentialSmoothing(series[:-4], trend="add", seasonal="add", seasonal_periods=12).fit()
     fc = fit.forecast(4)
     f_ms = (time.perf_counter() - t0) * 1000
     mape = float(np.mean(np.abs((series[-4:].values - fc.values) / series[-4:].values)) * 100)
