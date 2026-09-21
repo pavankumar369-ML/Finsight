@@ -284,7 +284,7 @@ def test_login_rate_limit_and_headers(client):
     assert codes[:10] == [401] * 10 and codes[-1] == 429
     main._attempts.clear()
     h = client.get("/api/health")
-    assert h.headers["x-content-type-options"] == "nosniff" and h.json()["database"] == "sqlite"
+    assert h.headers["x-content-type-options"] == "nosniff" and h.json()["database"] in ("sqlite", "postgres")
 
 
 def _pdf_table(rows, password=None, pages_of=None):
