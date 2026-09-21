@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Line, LineChart, Tooltip, XAxis, YAxis, ReferenceLine } from "recharts";
-import { BrainCircuit, CheckCircle2, Clock, Gauge, Pause, Play, RefreshCw, Rocket, XCircle, CircleDashed } from "lucide-react";
+import { BrainCircuit, CheckCircle2, Clock, Gauge, Pause, Play, RefreshCw, Rocket, XCircle, CircleDashed, Users, UserCheck, LogIn, UserPlus } from "lucide-react";
 import clsx from "clsx";
 import { api, dataChanged } from "../lib/api";
 import { useApi, useTokens } from "../lib/hooks";
@@ -33,6 +33,8 @@ export default function Metrics() {
         </>} />
 
       <ReviewCard live={live.data} models={models.data} load={load} />
+
+      <UsersSection paused={paused} />
 
       <div className="mb-3 mt-9 flex flex-wrap items-end justify-between gap-3">
         <div><h2 className="display text-2xl font-semibold">API performance</h2><p className="text-[14px] text-muted">Every request except this page's own polling.</p></div>
@@ -409,3 +411,51 @@ function ModelSection({ m, onRetrained }) {
 }
 
 function FragmentRow({ children }) { return <>{children}</>; }
+
+
+/* ---------- users ---------- */
+function UsersSection({ paused }) {
+  const t = useTokens();
+  const { data: u, error, reload } = useApi("/metrics/users", { interval: 5000, paused });
+  const day = (iso) => new Date(iso + "T00:00:00").toLocaleDateString("en-IN", { day: "numeric", month: "short" });
+  return (
+    <>
+      <div className="mb-3 mt-9"><h2 className="display text-2xl font-semibold">Users</h2>
+        <p className="text-[14px] text-muted">Who is using FinSight. Counts only; no one's personal details are shown.</p></div>
+      {error ? <Card><ErrorState error={error} onRetry={reload} /></Card> : !u ? (
+        <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">{[0, 1, 2, 3, 4].map((i) => <Skeleton key={i} className="h-28 rounded-[20px]" />)}</div>
+      ) : (
+        <div className="grid grid-cols-12 gap-4 lg:gap-5">
+          <div className="col-span-12 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:gap-5 xl:grid-cols-5">
+            <Card className="p-4 sm:p-5">
+              <div className="flex items-center justify-between text-[13px] text-muted">Active now
+                <span className="relative flex h-2 w-2"><span className={clsx("relative h-2 w-2 rounded-full bg-mint", !paused && "live-dot")} /></span></div>
+              <CountUp value={u.active_now} duration={0.5} className="display mt-1.5 block text-[1.6rem] font-semibold leading-tight text-mint" />
+              <p className="mt-0.5 text-[12px] text-faint">seen in the last {u.active_window_minutes} min</p>
+            </Card>
+            <Kpi label="Registered users" value={u.registered_users} format={(v) => Math.round(v).toLocaleString("en-IN")} icon={Users} sub={`${u.new_today} new today · demo excluded`} />
+            <Kpi label="Active today" value={u.active_today} format={(v) => Math.round(v).toLocaleString("en-IN")} icon={UserCheck} sub={`${u.active_7d} in the last 7 days`} />
+            <Kpi label="Sign-ins, all time" value={u.total_logins} format={(v) => Math.round(v).toLocaleString("en-IN")} icon={LogIn} sub={`${u.demo_sessions} were demo sessions`} />
+            <Kpi label="Sign-ins today" value={u.logins_today} format={(v) => Math.round(v).toLocaleString("en-IN")} icon={UserPlus} />
+          </div>
+          <Card className="col-span-12">
+            <CardHeader title="Sign-ins and new accounts" hint="Last 14 days"
+              action={<div className="flex gap-3 text-[12px] text-muted"><span className="flex items-center gap-1.5"><i className="h-2 w-2 rounded-full bg-sky" />Sign-ins</span><span className="flex items-center gap-1.5"><i className="h-2 w-2 rounded-full bg-accent" />New accounts</span></div>} />
+            <div className="h-[220px] px-2 pb-4 pt-4">
+              <ChartBox>
+                <BarChart data={u.series} margin={{ right: 16 }} barGap={3}>
+                  <CartesianGrid vertical={false} stroke={t.linesoft} />
+                  <XAxis dataKey="day" tickFormatter={day} axisLine={false} tickLine={false} minTickGap={16} />
+                  <YAxis allowDecimals={false} axisLine={false} tickLine={false} width={34} />
+                  <Tooltip content={<ChartTooltip labelFormatter={day} />} />
+                  <Bar dataKey="logins" name="Sign-ins" fill={t.sky} radius={[5, 5, 1, 1]} maxBarSize={22} />
+                  <Bar dataKey="signups" name="New accounts" fill={t.accent} radius={[5, 5, 1, 1]} maxBarSize={22} />
+                </BarChart>
+              </ChartBox>
+            </div>
+          </Card>
+        </div>
+      )}
+    </>
+  );
+}

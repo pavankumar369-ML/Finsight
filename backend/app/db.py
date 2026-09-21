@@ -22,6 +22,17 @@ class User(Base):
     email = Column(String(120), unique=True, index=True, nullable=False)
     password_hash = Column(String(200), nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
+    last_seen = Column(DateTime, nullable=True, index=True)
+    last_login = Column(DateTime, nullable=True)
+    login_count = Column(Integer, default=0)
+
+
+class LoginEvent(Base):
+    __tablename__ = "login_events"
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=False)
+    ts = Column(DateTime, default=datetime.utcnow, index=True)
+    method = Column(String(12))          # password | register | demo
 
 
 class Transaction(Base):
@@ -98,6 +109,22 @@ class ModelRun(Base):
 
 def init_db():
     Base.metadata.create_all(engine)
+    _add_missing_columns()
+
+
+def _add_missing_columns():
+    """create_all() never alters existing tables, so older databases get new columns added here."""
+    from sqlalchemy import inspect, text
+    insp = inspect(engine)
+    with engine.begin() as conn:
+        for table in Base.metadata.sorted_tables:
+            if not insp.has_table(table.name):
+                continue
+            have = {c["name"] for c in insp.get_columns(table.name)}
+            for col in table.columns:
+                if col.name not in have:
+                    ddl = col.type.compile(dialect=engine.dialect)
+                    conn.execute(text(f'ALTER TABLE {table.name} ADD COLUMN {col.name} {ddl}'))
 
 
 def get_db():

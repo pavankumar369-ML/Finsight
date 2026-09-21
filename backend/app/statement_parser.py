@@ -97,10 +97,73 @@ def parse_date(value):
     return None if pd.isna(d) else d.date()
 
 
-def read_table(raw: bytes, filename: str) -> pd.DataFrame:
+class PasswordRequired(ValueError):
+    pass
+
+
+DATE_START = re.compile(r"^\s*(\d{1,2}[/\-. ](?:\d{1,2}|[A-Za-z]{3})[/\-. ]\d{2,4})\s+(.*)$")
+AMOUNT_TOKEN = re.compile(r"\(?-?(?:₹|rs\.?|inr)?\s*\d[\d,]*(?:\.\d{1,2})?\)?(?:\s*(?:dr|cr))?", re.I)
+
+
+def read_pdf(raw: bytes, password: str | None = None) -> pd.DataFrame:
+    """Text PDFs: use the tables pdfplumber detects on every page; fall back to reading text lines
+    that start with a date. Scanned (image-only) PDFs have no text and are rejected with a clear message."""
+    import pdfplumber
+    from pdfminer.pdfdocument import PDFPasswordIncorrect
+    try:
+        pdf = pdfplumber.open(io.BytesIO(raw), password=password or "")
+    except Exception as e:
+        # pdfplumber wraps pdfminer's password error in its own exception type
+        inner = e.args[0] if e.args else None
+        if isinstance(e, PDFPasswordIncorrect) or isinstance(inner, PDFPasswordIncorrect) or "PDFPasswordIncorrect" in repr(e):
+            raise PasswordRequired("This PDF is password-protected. Enter the statement password (often your date of birth "
+                                   "or customer ID) and import again." if not password else "That PDF password is incorrect.")
+        raise ValueError("This PDF couldn't be opened. Download the statement again or export it as CSV/Excel.") from e
+    rows, text_lines = [], []
+    with pdf:
+        if len(pdf.pages) > 60:
+            raise ValueError("This PDF has more than 60 pages. Upload a shorter date range.")
+        for page in pdf.pages:
+            for table in page.extract_tables() or []:
+                for r in table:
+                    cells = [re.sub(r"\s+", " ", str(c or "")).strip() for c in r]
+                    if any(cells):
+                        rows.append(cells)
+            text_lines += (page.extract_text() or "").splitlines()
+    if not any(line.strip() for line in text_lines) and not rows:
+        raise ValueError("This PDF looks scanned (it contains images, not text), so it can't be read. "
+                         "Download the e-statement from net banking, or export it as CSV/Excel.")
+    if len(rows) >= 3:
+        width = max(len(r) for r in rows)
+        return pd.DataFrame([r + [""] * (width - len(r)) for r in rows], dtype=str)
+    # no ruled table: rebuild one from lines like "05/09/2026 UPI/NETFLIX/1 499.00 1,000.00"
+    parsed = []
+    for line in text_lines:
+        m = DATE_START.match(line)
+        if not m:
+            continue
+        rest = m.group(2)
+        amounts = list(AMOUNT_TOKEN.finditer(rest))
+        amounts = [a for a in amounts if re.search(r"[.,]\d|dr|cr|₹|rs|inr", a.group(), re.I)] or amounts
+        if not amounts:
+            continue
+        first = amounts[0]
+        desc = rest[:first.start()].strip(" -|")
+        vals = [a.group().strip() for a in amounts]
+        # with 2+ numbers the last is usually the running balance
+        amount = vals[0] if len(vals) >= 1 else ""
+        parsed.append([m.group(1), desc, amount])
+    if not parsed:
+        raise ValueError("No transactions were found in this PDF. Try the CSV or Excel export from your bank instead.")
+    return pd.DataFrame([["Date", "Description", "Amount"]] + parsed, dtype=str)
+
+
+def read_table(raw: bytes, filename: str, password: str | None = None) -> pd.DataFrame:
     """Reads the first sheet/table as strings, with no header assumptions."""
     name = (filename or "").lower()
-    if name.endswith((".xlsx", ".xlsm", ".xls")):
+    if name.endswith(".pdf"):
+        df = read_pdf(raw, password)
+    elif name.endswith((".xlsx", ".xlsm", ".xls")):
         engine = "xlrd" if name.endswith(".xls") else "openpyxl"
         try:
             sheets = pd.read_excel(io.BytesIO(raw), sheet_name=None, header=None, dtype=str, engine=engine)
@@ -174,8 +237,8 @@ def find_header(df):
     return best, best_score
 
 
-def parse_statement(raw: bytes, filename: str):
-    df = read_table(raw, filename)
+def parse_statement(raw: bytes, filename: str, password: str | None = None):
+    df = read_table(raw, filename, password)
     if df.empty:
         raise ValueError("The file is empty.")
     h, score = find_header(df)

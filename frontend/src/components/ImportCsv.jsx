@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { FileUp, FileSpreadsheet, Download, AlertTriangle } from "lucide-react";
+import { FileUp, FileSpreadsheet, Download, AlertTriangle, Lock } from "lucide-react";
 import clsx from "clsx";
 import Modal from "./Modal";
 import { Button, CountUp } from "./ui";
@@ -14,12 +14,16 @@ export default function ImportCsv({ open, onClose }) {
   const [file, setFile] = useState(null);
   const [drag, setDrag] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [password, setPassword] = useState("");
+  const [locked, setLocked] = useState("");      // server message when a PDF needs a password
+  const isPdf = file?.name?.toLowerCase().endsWith(".pdf");
   const [result, setResult] = useState(null);
 
-  const close = () => { onClose(); setTimeout(() => { setFile(null); setResult(null); }, 250); };
+  const close = () => { onClose(); setTimeout(() => { setFile(null); setResult(null); setPassword(""); setLocked(""); }, 250); };
   const pick = (f) => {
     if (!f) return;
-    if (!/\.(csv|xlsx|xls|xlsm)$/i.test(f.name)) return toast("Choose a .csv, .xlsx or .xls statement from your bank.", { tone: "bad" });
+    if (!/\.(csv|xlsx|xls|xlsm|pdf)$/i.test(f.name)) return toast("Choose a .csv, .xlsx, .xls or .pdf statement from your bank.", { tone: "bad" });
+    setLocked(""); setPassword("");
     setFile(f); setResult(null);
   };
   async function upload() {
@@ -27,10 +31,14 @@ export default function ImportCsv({ open, onClose }) {
     try {
       const form = new FormData();
       form.append("file", file);
+      if (isPdf && password) form.append("password", password);
       const r = await api("/transactions/import", { method: "POST", form });
-      setResult(r);
+      setResult(r); setLocked(""); setPassword("");
       dataChanged();
-    } catch (e) { toast(e.message, { tone: "bad" }); } finally { setBusy(false); }
+    } catch (e) {
+      if (e.status === 423) setLocked(e.message);
+      else toast(e.message, { tone: "bad" });
+    } finally { setBusy(false); }
   }
   async function sample() {
     const res = await fetch(apiUrl("/transactions/sample-csv"));
@@ -42,7 +50,7 @@ export default function ImportCsv({ open, onClose }) {
   const maxB = breakdown[0]?.[1] ?? 1;
 
   return (
-    <Modal open={open} onClose={close} title="Import bank statement" subtitle="CSV or Excel. Bank headers, Dr/Cr markers, Nil values and amounts written in words are handled automatically." width={560}>
+    <Modal open={open} onClose={close} title="Import bank statement" subtitle="CSV, Excel or PDF. Bank headers, Dr/Cr markers, Nil values and amounts written in words are handled automatically." width={560}>
       <AnimatePresence mode="wait">
         {!result ? (
           <motion.div key="pick" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-4">
@@ -57,10 +65,23 @@ export default function ImportCsv({ open, onClose }) {
               {file ? (
                 <span><span className="block font-semibold">{file.name}</span><span className="text-[13px] text-muted">{(file.size / 1024).toFixed(1)} KB · ready to import</span></span>
               ) : (
-                <span><span className="block font-semibold">Drop your statement here</span><span className="text-[13px] text-muted">or click to choose a .csv, .xlsx or .xls file (up to 5 MB)</span></span>
+                <span><span className="block font-semibold">Drop your statement here</span><span className="text-[13px] text-muted">or click to choose a .csv, .xlsx, .xls or .pdf file (up to 5 MB)</span></span>
               )}
             </button>
-            <input ref={input} type="file" accept=".csv,.xlsx,.xls,.xlsm,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden onChange={(e) => pick(e.target.files?.[0])} />
+            <input ref={input} type="file" accept=".csv,.xlsx,.xls,.xlsm,.pdf,application/pdf,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden onChange={(e) => pick(e.target.files?.[0])} />
+            {isPdf && (
+              <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} className="overflow-hidden">
+                <label className="block">
+                  <span className="mb-1.5 flex items-center gap-1.5 text-[13px] font-semibold text-muted"><Lock size={13} />PDF password {!locked && <span className="font-normal text-faint">(only if the statement is locked)</span>}</span>
+                  <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="off"
+                    onKeyDown={(e) => { if (e.key === "Enter" && file) upload(); }}
+                    placeholder="Often your date of birth (DDMMYYYY) or customer ID"
+                    className={clsx("h-10 w-full rounded-xl border bg-surface-2 px-3 text-sm text-text placeholder:text-faint focus:border-accent focus:outline-none", locked ? "border-accent" : "border-line")} />
+                </label>
+                {locked && <p className="mt-1.5 text-[12px] text-accent">{locked}</p>}
+                <p className="mt-1.5 text-[12px] text-faint">Text-based e-statements work. Scanned paper statements can't be read.</p>
+              </motion.div>
+            )}
             <div className="flex flex-wrap items-center justify-between gap-2">
               <Button variant="ghost" size="sm" icon={Download} onClick={sample}>Download sample CSV</Button>
               <div className="flex gap-2">

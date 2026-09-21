@@ -224,7 +224,7 @@ def test_import_messy_bank_csv(client, user):
 
 
 def test_import_rejects_other_types(client, user):
-    r = client.post("/api/transactions/import", headers=user, files={"file": ("a.pdf", io.BytesIO(b"%PDF"), "application/pdf")})
+    r = client.post("/api/transactions/import", headers=user, files={"file": ("a.docx", io.BytesIO(b"PK"), "application/msword")})
     assert r.status_code == 415
 
 
@@ -257,3 +257,68 @@ def test_login_rate_limit_and_headers(client):
     main._attempts.clear()
     h = client.get("/api/health")
     assert h.headers["x-content-type-options"] == "nosniff" and h.json()["database"] == "sqlite"
+
+
+def _pdf_table(rows, password=None, pages_of=None):
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import getSampleStyleSheet
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Table, TableStyle, Spacer
+    from reportlab.lib import pdfencrypt
+    buf = io.BytesIO()
+    enc = pdfencrypt.StandardEncryption(password, canPrint=1) if password else None
+    doc = SimpleDocTemplate(buf, pagesize=A4, encrypt=enc)
+    t = Table(rows, repeatRows=1)
+    t.setStyle(TableStyle([("GRID", (0, 0), (-1, -1), 0.5, colors.grey)]))
+    doc.build([Paragraph("HDFC BANK — Statement of Account", getSampleStyleSheet()["Title"]), Spacer(1, 12), t])
+    return buf.getvalue()
+
+
+def _pdf_rows(n):
+    rows = [["Date", "Narration", "Withdrawal Amt.", "Deposit Amt.", "Closing Balance"]]
+    for i in range(n):
+        rows.append([f"{(i % 27) + 1:02d}/05/26", f"UPI/SWIGGY/PDF{i:03d}", f"{100 + i}.00", "", "50,000.00"])
+    rows.append(["01/05/26", "NEFT ACME SALARY PDF", "", "68,000.00", "1,18,000.00"])
+    return rows
+
+
+def test_import_pdf_table_multipage(client, user):
+    pdf = _pdf_table(_pdf_rows(70))   # long enough to span several pages
+    r = client.post("/api/transactions/import", headers=user, files={"file": ("hdfc.pdf", io.BytesIO(pdf), "application/pdf")}).json()
+    assert r["file_type"] == "PDF" and r["imported"] == 71 and r["breakdown"].get("Salary") == 1, r
+
+
+def test_import_pdf_password(client, user):
+    pdf = _pdf_table(_pdf_rows(3)[:3] + [["03/04/26", "UPI/UBER/PWD1", "212.00", "", "1"]], password="12031999")
+    f = lambda: {"file": ("locked.pdf", io.BytesIO(pdf), "application/pdf")}
+    assert client.post("/api/transactions/import", headers=user, files=f()).status_code == 423
+    wrong = client.post("/api/transactions/import", headers=user, files=f(), data={"password": "nope"})
+    assert wrong.status_code == 423 and "incorrect" in wrong.json()["detail"]
+    ok = client.post("/api/transactions/import", headers=user, files=f(), data={"password": "12031999"}).json()
+    assert ok["imported"] + ok["duplicates"] == 3 and ok["error_count"] == 0
+
+
+def test_import_pdf_text_lines_and_scanned(client, user):
+    from reportlab.pdfgen import canvas
+    buf = io.BytesIO(); c = canvas.Canvas(buf)
+    c.drawString(50, 800, "State Bank of India   Account statement")
+    for i, line in enumerate(["05/04/2026 UPI/NETFLIX/TXT1 499.00 10,000.00", "06/04/2026 UPI/ZOMATO/TXT2 350.50 Dr 9,649.50",
+                              "07/04/2026 IMPS REFUND AMAZON TXT3 1,200.00 Cr 10,849.50"]):
+        c.drawString(50, 760 - i * 20, line)
+    c.save()
+    r = client.post("/api/transactions/import", headers=user, files={"file": ("sbi.pdf", io.BytesIO(buf.getvalue()), "application/pdf")}).json()
+    assert r["imported"] == 3 and r["breakdown"].get("Refund") == 1, r
+    blank = io.BytesIO(); c = canvas.Canvas(blank); c.rect(50, 50, 200, 200, fill=1); c.save()
+    s = client.post("/api/transactions/import", headers=user, files={"file": ("scan.pdf", io.BytesIO(blank.getvalue()), "application/pdf")})
+    assert s.status_code == 422 and "scanned" in s.json()["detail"]
+
+
+def test_user_metrics(client, demo):
+    from app import main
+    main._attempts.clear()
+    client.post("/api/auth/register", json={"name": "Metric Person", "email": "metric@x.com", "password": "secret12"})
+    client.post("/api/auth/login", json={"email": "metric@x.com", "password": "secret12"})
+    m = client.get("/api/metrics/users", headers=demo).json()
+    assert m["registered_users"] >= 2 and m["active_now"] >= 1 and m["total_logins"] >= m["logins_today"] >= 2
+    assert m["demo_sessions"] >= 1 and len(m["series"]) == 14
+    assert "email" not in str(m)            # aggregate only, no personal data

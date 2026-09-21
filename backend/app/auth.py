@@ -37,4 +37,8 @@ def current_user(creds: HTTPAuthorizationCredentials = Depends(bearer), db: Sess
         user = None
     if not user:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Your session has expired. Sign in again.")
+    now = datetime.utcnow()
+    if not user.last_seen or (now - user.last_seen).total_seconds() > 30:   # throttle writes: at most one per 30 s
+        user.last_seen = now
+        db.commit()
     return user

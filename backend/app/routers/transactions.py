@@ -1,7 +1,7 @@
 import io, time
 from datetime import date
 import pandas as pd
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query
 from fastapi.responses import PlainTextResponse
 from sqlalchemy import or_, func
 from sqlalchemy.orm import Session
@@ -11,7 +11,7 @@ from ..schemas import TxnIn, TxnPatch, SuggestIn
 from ..ml.categorizer import categorizer
 from ..ml.dataset import EXPENSE_CATEGORIES, INCOME_CATEGORIES
 from ..services import refresh_anomalies
-from ..statement_parser import parse_statement
+from ..statement_parser import parse_statement, PasswordRequired
 
 router = APIRouter(prefix="/api", tags=["transactions"])
 
@@ -187,16 +187,18 @@ def _pick(cols, *names):
 
 
 @router.post("/transactions/import")
-async def import_statement(file: UploadFile = File(...), user: User = Depends(current_user), db: Session = Depends(get_db)):
+async def import_statement(file: UploadFile = File(...), password: str = Form(""), user: User = Depends(current_user), db: Session = Depends(get_db)):
     t0 = time.perf_counter()
     name = (file.filename or "").lower()
-    if not name.endswith((".csv", ".txt", ".xlsx", ".xlsm", ".xls")):
-        raise HTTPException(415, "Upload a .csv, .xlsx or .xls bank statement.")
+    if not name.endswith((".csv", ".txt", ".xlsx", ".xlsm", ".xls", ".pdf")):
+        raise HTTPException(415, "Upload a .csv, .xlsx, .xls or .pdf bank statement.")
     raw = await file.read()
     if len(raw) > 5 * 1024 * 1024:
         raise HTTPException(413, "File is larger than 5 MB. Split the statement and upload it in parts.")
     try:
-        parsed_file = parse_statement(raw, name)
+        parsed_file = parse_statement(raw, name, password or None)
+    except PasswordRequired as e:
+        raise HTTPException(423, str(e))          # 423 Locked: the client shows a password field
     except ValueError as e:
         raise HTTPException(422, str(e))
 
@@ -234,5 +236,5 @@ async def import_statement(file: UploadFile = File(...), user: User = Depends(cu
             "low_confidence": int(low), "breakdown": breakdown, "anomalies_total": flagged,
             "detected_columns": parsed_file["detected"], "header_row": parsed_file["header_row"],
             "amounts_from_words": parsed_file["amounts_from_words"],
-            "file_type": "Excel" if name.endswith((".xlsx", ".xlsm", ".xls")) else "CSV",
+            "file_type": "PDF" if name.endswith(".pdf") else "Excel" if name.endswith((".xlsx", ".xlsm", ".xls")) else "CSV",
             "elapsed_ms": round((time.perf_counter() - t0) * 1000, 1)}

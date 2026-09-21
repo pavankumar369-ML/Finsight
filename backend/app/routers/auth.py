@@ -1,11 +1,21 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from ..db import get_db, User
+from datetime import datetime
+from ..db import get_db, User, LoginEvent
 from ..auth import hash_password, verify_password, create_token, current_user
 from ..schemas import RegisterIn, LoginIn
 from ..seed import ensure_demo
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
+
+
+def _record(db, user, method):
+    now = datetime.utcnow()
+    user.last_login = now
+    user.last_seen = now
+    user.login_count = (user.login_count or 0) + 1
+    db.add(LoginEvent(user_id=user.id, ts=now, method=method))
+    db.commit()
 
 
 def _out(user):
@@ -20,6 +30,7 @@ def register(body: RegisterIn, db: Session = Depends(get_db)):
     user = User(name=body.name.strip(), email=email, password_hash=hash_password(body.password))
     db.add(user)
     db.commit()
+    _record(db, user, "register")
     return _out(user)
 
 
@@ -28,12 +39,15 @@ def login(body: LoginIn, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.email == body.email.lower().strip()).first()
     if not user or not verify_password(body.password, user.password_hash):
         raise HTTPException(401, "Email or password is incorrect.")
+    _record(db, user, "password")
     return _out(user)
 
 
 @router.post("/demo")
 def demo(db: Session = Depends(get_db)):
-    return _out(ensure_demo(db))
+    user = ensure_demo(db)
+    _record(db, user, "demo")
+    return _out(user)
 
 
 @router.get("/me")

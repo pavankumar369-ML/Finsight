@@ -9,7 +9,7 @@ STARTED_AT = time.time()
 _buf = deque(maxlen=50000)     # (epoch, method, path, status, ms)
 _pending = []
 _lock = threading.Lock()
-SKIP_PREFIXES = ("/api/metrics/live", "/api/metrics/models")   # the Metrics page's own polling
+SKIP_PREFIXES = ("/api/metrics/live", "/api/metrics/models", "/api/metrics/users")   # the Metrics page's own polling
 
 
 def normalise(path: str) -> str:

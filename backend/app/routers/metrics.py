@@ -1,7 +1,8 @@
 import json, time
+from collections import defaultdict
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
-from ..db import get_db, ModelRun, Transaction, User
+from ..db import get_db, ModelRun, Transaction, User, LoginEvent
 from ..auth import current_user
 from ..ml.categorizer import categorizer
 from ..ml import analytics as A
@@ -94,3 +95,38 @@ def probe(user: User = Depends(current_user)):
     t0 = time.perf_counter()
     categorizer.predict(["UPI/SWIGGY/VELLORE/123456"])
     return {"inference_ms": round((time.perf_counter() - t0) * 1000, 3)}
+
+
+@router.get("/users")
+def users(user: User = Depends(current_user), db: Session = Depends(get_db)):
+    """Aggregate usage only; no other user's name or email is ever returned."""
+    from datetime import datetime, timedelta
+    from sqlalchemy import func
+    from ..seed import DEMO_EMAIL
+    now = datetime.utcnow()
+    today = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    demo_id = db.query(User.id).filter(User.email == DEMO_EMAIL).scalar()
+    real = db.query(User).filter(User.email != DEMO_EMAIL)
+    events = db.query(LoginEvent)
+    days = 14
+    start = today - timedelta(days=days - 1)
+    logins = defaultdict(int)
+    for (ts,) in events.filter(LoginEvent.ts >= start).with_entities(LoginEvent.ts).all():
+        logins[ts.date()] += 1
+    signups = defaultdict(int)
+    for (ts,) in real.filter(User.created_at >= start).with_entities(User.created_at).all():
+        signups[ts.date()] += 1
+    series = [{"day": (start + timedelta(days=i)).date().isoformat(), "logins": logins[(start + timedelta(days=i)).date()],
+               "signups": signups[(start + timedelta(days=i)).date()]} for i in range(days)]
+    return {
+        "registered_users": real.count(),
+        "new_today": real.filter(User.created_at >= today).count(),
+        "active_now": db.query(User).filter(User.last_seen >= now - timedelta(minutes=5)).count(),
+        "active_today": db.query(User).filter(User.last_seen >= today).count(),
+        "active_7d": db.query(User).filter(User.last_seen >= now - timedelta(days=7)).count(),
+        "total_logins": events.count(),
+        "logins_today": events.filter(LoginEvent.ts >= today).count(),
+        "demo_sessions": events.filter(LoginEvent.user_id == demo_id).count() if demo_id else 0,
+        "active_window_minutes": 5,
+        "series": series,
+    }

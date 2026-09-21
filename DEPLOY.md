@@ -9,12 +9,14 @@ git commit -m "FinSight v3"
 git push
 ```
 
-## 1. (Recommended) Free Postgres database on Neon
-Render's free plan has no persistent disk, so SQLite **loses all data on every redeploy or restart**. For a real deployment:
+## 1. Free Postgres database on Neon (needed so users keep their data)
+Render's free plan has no persistent disk, so SQLite **loses all data on every redeploy or restart** (Render also restarts sleeping free services). Neon's free Postgres keeps every user's data permanently, and FinSight needs no code changes for it:
 1. Sign up at https://neon.tech → **Create project** (region: Singapore / closest to you).
 2. Copy the **connection string** (starts with `postgresql://...`). You'll paste it as `DATABASE_URL` in step 2.
 
-Skip this if you only need a demo; the demo account is recreated automatically on each start.
+Skip this only if you want a throwaway demo; the demo account is recreated on each start, but real users' data would vanish.
+
+Why not Firebase? FinSight's backend uses SQL through SQLAlchemy. Firebase is a NoSQL store and would need every query rewritten. Postgres gives the same result (permanent, per-user data) with one environment variable.
 
 ## 2. Backend on Render
 1. https://render.com → sign in with GitHub → **New +** → **Web Service** → pick the `Finsight` repo.

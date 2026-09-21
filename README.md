@@ -1,6 +1,6 @@
 # FinSight — AI-powered Personal Finance Management System
 
-**Version 3 (final).** React + FastAPI + scikit-learn. AI assistant, ML insights, CSV and Excel statement import. Deployable to Vercel + Render (see [DEPLOY.md](DEPLOY.md)). Imports bank statements, auto-categorises UPI/POS/NEFT transactions, forecasts next month's spending, flags unusual spends and scores financial health. A live **Metrics** page measures the running system against the targets in the project document.
+**Version 3 (final).** React + FastAPI + scikit-learn. AI assistant, ML insights, CSV / Excel / PDF statement import, live user metrics. Deployable to Vercel + Render (see [DEPLOY.md](DEPLOY.md)). Imports bank statements, auto-categorises UPI/POS/NEFT transactions, forecasts next month's spending, flags unusual spends and scores financial health. A live **Metrics** page measures the running system against the targets in the project document.
 
 ## Run it locally
 
@@ -51,6 +51,8 @@ pytest -q
 | **Notifications (v2)** | Bell with unread count: budget overruns, bills due within 7 days, unusual spends, goal milestones |
 | **ML insights (v3)** | K-Means spending segments (k chosen by silhouette score) with scatter plot; trend detection by linear regression with p-values; variance decomposition of what makes months differ; weekday rhythm; interactive what-if simulator that recalculates savings and goal finish dates |
 | **Smart import (v3)** | CSV, XLSX and XLS. Finds the table below bank preamble rows, maps headers like "Withdrawal Amt." or "Transaction Remarks", reads amounts like "₹1,250.00 Dr", "(500)", "Nil" and amounts in words ("two thousand five hundred", "Rs. Three lakh only"), Excel serial dates, Dr/Cr columns, and skips opening/closing balance rows. Shows which columns were detected |
+| **PDF import (v3.1)** | Text-based bank e-statements across many pages; ruled tables or plain text lines; password-protected PDFs (the dialog asks for the password); clear message for scanned PDFs |
+| **User metrics (v3.1)** | Metrics page shows registered users, active now (last 5 min), active today / 7 days, sign-ins all time and today, and a 14-day chart. Aggregate counts only |
 | **Production (v3)** | Postgres via `DATABASE_URL`, CORS from env, sign-in rate limiting (10 attempts / 5 min), security headers, Render blueprint, Vercel config |
 | **Export (v2)** | Download the filtered transaction list as CSV |
 | UI | Dark and light themes, responsive down to phones, keyboard shortcut **N** to add a transaction, reduced-motion support |
@@ -88,7 +90,7 @@ backend/
     assistant.py         LLM client, data context builder, offline answer engine
     statement_parser.py  CSV/Excel reader: header detection, column mapping, amounts in words
     ml/ml_insights.py    K-Means segments, regression trends, variance drivers, what-if base
-  tests/test_api.py      27 API tests (incl. mocked LLM, Excel import, messy statements, ML insights, rate limit)
+  tests/test_api.py      31 API tests (incl. mocked LLM, Excel and PDF import, password PDFs, ML insights, user metrics, rate limit)
 frontend/
   src/
     pages/               Login, Dashboard, Transactions, Assistant, Budgets, Goals, Insights, Metrics
@@ -128,6 +130,9 @@ frontend/
 | Three clusters with medians ₹249/₹270/₹310 were named small/mid/large | Names now come from the feature that separates them (size, weekend share, time of month) |
 | Import dialog still rejected .xlsx files | File check accepts .csv, .xlsx, .xls, .xlsm; verified by uploading an ICICI-style Excel file in the browser |
 | Verified deployed topology locally: frontend built with `VITE_API_URL` on a different origin, backend CORS limited to that origin | All pages, import and API calls work cross-origin with no console errors |
+
+## Database upgrades are automatic
+New columns (for example the user-activity fields in v3.1) are added to an existing `finsight.db` or Postgres database on startup, so existing data is kept. There's no need to delete the database when updating.
 
 ## Roadmap
 - ✅ **Phase 2 (v2):** AI assistant, savings goals, recurring bills, notifications, CSV export.
