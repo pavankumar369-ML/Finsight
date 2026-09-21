@@ -5,6 +5,7 @@
     python -m app.manage reset-chats --yes     # delete only assistant chat history
     python -m app.manage reset-demo --yes      # restore the shared demo account to its original data
     python -m app.manage admins                # show which emails have admin access (ADMIN_EMAILS)
+    python -m app.manage set-password EMAIL    # set a new password for an account (e.g. forgotten password)
 """
 import sys
 from sqlalchemy import inspect, text
@@ -59,6 +60,33 @@ def main(argv):
         ensure_demo(db)
         db.close()
         print("Demo account restored to its original 6 months of data.")
+    elif cmd == "set-password":
+        import getpass
+        from .auth import hash_password
+        from .db import User
+        if len(argv) < 3:
+            print("Usage: python -m app.manage set-password EMAIL")
+            return 1
+        email = argv[2].strip().lower()
+        db = SessionLocal()
+        u = db.query(User).filter(User.email == email).first()
+        if not u:
+            print(f"No account with the email {email}.")
+            db.close()
+            return 1
+        pw = getpass.getpass("New password (min 6 characters, hidden as you type): ")
+        if len(pw) < 6:
+            print("Password must be at least 6 characters. Nothing changed.")
+            db.close()
+            return 1
+        if getpass.getpass("Type it again: ") != pw:
+            print("The two passwords didn't match. Nothing changed.")
+            db.close()
+            return 1
+        u.password_hash = hash_password(pw)
+        db.commit()
+        db.close()
+        print(f"Password updated for {email}. Sign in with the new password.")
     elif cmd == "admins":
         from .auth import admin_emails
         a = admin_emails()

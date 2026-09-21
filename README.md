@@ -38,7 +38,7 @@ pytest -q
 
 | Area | What it does |
 |---|---|
-| Auth | Register / sign in with bcrypt-hashed passwords and JWT sessions; one-click demo account |
+| Auth | Register / sign in with bcrypt-hashed passwords and JWT sessions; change password (key icon next to your name); one-click demo account |
 | Overview | Pace meter (budget used vs month elapsed, projected month-end), spend curve vs last month, health score, cash flow, category split, recent activity, unusual spends |
 | Transactions | Search and filters, live category suggestion with top-3 probabilities while typing, one-click category correction, edit/delete with undo, pagination |
 | CSV import | Drag-and-drop; handles Debit/Credit columns, signed Amount, Type column, Indian date formats, duplicate detection, row errors, 5 MB limit |
@@ -91,7 +91,7 @@ backend/
     manage.py            admin commands: stats, reset database, reset chats
     statement_parser.py  CSV/Excel reader: header detection, column mapping, amounts in words
     ml/ml_insights.py    K-Means segments, regression trends, variance drivers, what-if base
-  tests/test_api.py      37 API tests (incl. forecast method selection, admin access control, data-poisoning guard, rate limiting, assistant intent understanding, Excel and PDF import, password PDFs, ML insights, user metrics, rate limit)
+  tests/test_api.py      39 API tests (incl. password change, forecast method selection, admin access control, data-poisoning guard, rate limiting, assistant intent understanding, Excel and PDF import, password PDFs, ML insights, user metrics, rate limit)
 frontend/
   src/
     pages/               Login, Dashboard, Transactions, Assistant, Budgets, Goals, Insights, Metrics
@@ -152,6 +152,7 @@ Set admins with `ADMIN_EMAILS` (comma-separated) in `backend/.env` locally, or i
 | `python -m app.manage reset-chats --yes` | Deletes only assistant chat history |
 | `python -m app.manage reset-demo --yes` | Restores the shared demo account (if visitors changed or deleted its data) |
 | `python -m app.manage admins` | Shows which emails have admin access |
+| `python -m app.manage set-password EMAIL` | Sets a new password for an account (for forgotten passwords). Asks twice, hidden as you type |
 
 ## Database upgrades are automatic
 New columns (for example the user-activity fields in v3.1) are added to an existing `finsight.db` or Postgres database on startup, so existing data is kept. There's no need to delete the database when updating.

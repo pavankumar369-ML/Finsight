@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from datetime import datetime
 from ..db import get_db, User, LoginEvent
 from ..auth import hash_password, verify_password, create_token, current_user, is_admin
-from ..schemas import RegisterIn, LoginIn
+from ..schemas import RegisterIn, LoginIn, PasswordChangeIn
 from ..seed import ensure_demo
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -48,6 +48,19 @@ def demo(db: Session = Depends(get_db)):
     user = ensure_demo(db)
     _record(db, user, "demo")
     return _out(user)
+
+
+@router.post("/change-password", status_code=204)
+def change_password(body: PasswordChangeIn, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    from ..seed import DEMO_EMAIL
+    if user.email == DEMO_EMAIL:
+        raise HTTPException(403, "The demo account is shared, so its password can't be changed. Create your own account.")
+    if not verify_password(body.current_password, user.password_hash):
+        raise HTTPException(400, "Your current password is incorrect.")
+    if body.new_password == body.current_password:
+        raise HTTPException(422, "Choose a new password that's different from the current one.")
+    user.password_hash = hash_password(body.new_password)
+    db.commit()
 
 
 @router.get("/me")

@@ -2,7 +2,8 @@ import { createContext, useContext, useEffect, useState } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { motion } from "motion/react";
 import PageBoundary from "./PageBoundary";
-import { LayoutDashboard, ListOrdered, PiggyBank, Lightbulb, Activity, Plus, Moon, Sun, LogOut, Upload, Target, Sparkles, LayoutGrid } from "lucide-react";
+import { LayoutDashboard, ListOrdered, PiggyBank, Lightbulb, Activity, Plus, Moon, Sun, LogOut, Upload, Target, Sparkles, LayoutGrid, KeyRound } from "lucide-react";
+import ChangePassword from "./ChangePassword";
 import Notifications from "./Notifications";
 import Modal from "./Modal";
 import clsx from "clsx";
@@ -41,6 +42,8 @@ export default function Layout() {
   const [add, setAdd] = useState({ open: false, editing: null });
   const [importing, setImporting] = useState(false);
   const [more, setMore] = useState(false);
+  const [pwOpen, setPwOpen] = useState(false);
+  const isDemo = user?.email === "demo@finsight.app";
   const actions = { addTxn: () => setAdd({ open: true, editing: null }), editTxn: (t) => setAdd({ open: true, editing: t }), importCsv: () => setImporting(true) };
 
   useEffect(() => {
@@ -84,6 +87,7 @@ export default function Layout() {
               <p className="truncate text-sm font-semibold">{user?.name}</p>
               <p className="truncate text-[12px] text-faint">{user?.email}</p>
             </div>
+            {!isDemo && <IconButton icon={KeyRound} label="Change password" onClick={() => setPwOpen(true)} className="h-8 w-8" />}
             <IconButton icon={LogOut} label="Sign out" onClick={logout} className="h-8 w-8" />
           </div>
         </aside>
@@ -95,6 +99,7 @@ export default function Layout() {
             <Notifications />
             <ThemeToggle />
             <IconButton icon={Upload} label="Import statement" onClick={actions.importCsv} />
+            {!isDemo && <IconButton icon={KeyRound} label="Change password" onClick={() => setPwOpen(true)} />}
             <IconButton icon={LogOut} label="Sign out" onClick={logout} />
           </div>
         </header>
@@ -125,6 +130,7 @@ export default function Layout() {
 
         <AddTransaction open={add.open} editing={add.editing} onClose={() => setAdd({ open: false, editing: null })} />
         <ImportCsv open={importing} onClose={() => setImporting(false)} />
+        <ChangePassword open={pwOpen} onClose={() => setPwOpen(false)} />
         <Modal open={more} onClose={() => setMore(false)} title="More" width={420}>
           <div className="grid grid-cols-2 gap-2">
             {NAV.slice(3).map(({ to, label, icon: Icon }) => (

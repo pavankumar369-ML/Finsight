@@ -71,7 +71,7 @@ async def timing(request: Request, call_next):
                 return JSONResponse({"detail": "Too many requests. Slow down for a minute and try again."}, status_code=429,
                                     headers={"Retry-After": "60"})
             h.append(now)
-        if request.method == "POST" and request.url.path in ("/api/auth/login", "/api/auth/register"):
+        if request.method == "POST" and request.url.path in ("/api/auth/login", "/api/auth/register", "/api/auth/change-password"):
             q, now = _attempts[ip], time.time()
             while q and q[0] < now - AUTH_WINDOW:
                 q.popleft()

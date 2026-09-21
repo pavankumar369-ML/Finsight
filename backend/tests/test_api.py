@@ -412,3 +412,32 @@ def test_forecast_series_chooses_honest_method():
         assert _forecast_series([0, 0, 500, 0, 0, 400])[1] == "weighted-mean"   # mostly empty
         v, m = _forecast_series([8000, 8400, 8100, 8900, 8600, 9200, 9000, 9500])
         assert m.startswith(("holt-winters", "weighted-mean")) and 4000 < v < 14250
+
+
+def test_change_password(client, demo):
+    from app import main
+    main._attempts.clear()
+    tok = client.post("/api/auth/register", json={"name": "Pass Changer", "email": "pw@x.com", "password": "oldpass1"}).json()["token"]
+    h = {"Authorization": "Bearer " + tok}
+    assert client.post("/api/auth/change-password", headers=h, json={"current_password": "wrong", "new_password": "newpass1"}).status_code == 400
+    assert client.post("/api/auth/change-password", headers=h, json={"current_password": "oldpass1", "new_password": "oldpass1"}).status_code == 422
+    assert client.post("/api/auth/change-password", headers=h, json={"current_password": "oldpass1", "new_password": "123"}).status_code == 422
+    assert client.post("/api/auth/change-password", headers=h, json={"current_password": "oldpass1", "new_password": "newpass1"}).status_code == 204
+    assert client.post("/api/auth/login", json={"email": "pw@x.com", "password": "oldpass1"}).status_code == 401
+    assert client.post("/api/auth/login", json={"email": "pw@x.com", "password": "newpass1"}).status_code == 200
+    assert client.post("/api/auth/change-password", headers=demo, json={"current_password": "demo1234", "new_password": "hacked99"}).status_code == 403
+    main._attempts.clear()
+
+
+def test_manage_set_password(monkeypatch, capsys, client):
+    from app import manage, main
+    main._attempts.clear()
+    client.post("/api/auth/register", json={"name": "Forgot Me", "email": "forgot@x.com", "password": "lostpass"})
+    answers = iter(["freshpw1", "freshpw1"])
+    monkeypatch.setattr("getpass.getpass", lambda prompt="": next(answers))
+    assert manage.main(["manage", "set-password", "Forgot@X.com"]) == 0
+    assert client.post("/api/auth/login", json={"email": "forgot@x.com", "password": "freshpw1"}).status_code == 200
+    answers2 = iter(["abcdef1", "different"])
+    monkeypatch.setattr("getpass.getpass", lambda prompt="": next(answers2))
+    assert manage.main(["manage", "set-password", "forgot@x.com"]) == 1 and "didn't match" in capsys.readouterr().out
+    main._attempts.clear()
