@@ -38,7 +38,14 @@ export default function Login() {
           </p>
           <PacePreview />
         </div>
-        <p className="text-[13px] text-faint">Course-based project · Integrated M.Tech Software Engineering, VIT Vellore</p>
+        <p className="text-[13px] text-faint">
+          Designed & built by Pavan Kumar · © 2026 FinSight ·{" "}
+          <a href="https://github.com/pavankumar369-ML" target="_blank" rel="noopener noreferrer"
+             className="font-semibold text-muted underline-offset-4 hover:text-accent hover:underline">GitHub</a>
+          {" "}·{" "}
+          <a href="https://www.linkedin.com/in/pindiprolu-phani-pavan-kumar-236280385" target="_blank" rel="noopener noreferrer"
+             className="font-semibold text-muted underline-offset-4 hover:text-accent hover:underline">LinkedIn</a>
+        </p>
       </section>
 
       <section className="flex items-center justify-center px-5 py-10">
