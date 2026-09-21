@@ -56,7 +56,10 @@ From your laptop, point the reset command at the Neon database once (PowerShell)
 `$env:DATABASE_URL="<your Neon connection string>"; python -m app.manage reset --yes`
 Or in Neon's dashboard: **Branches → Reset from parent**, or run `DROP SCHEMA public CASCADE; CREATE SCHEMA public;` in the SQL Editor, then restart the Render service.
 
-## If the Render deploy fails with "Port scan timeout reached" and shows NO logs at all after "Running uvicorn..."
+## Why the free-tier deploy could time out (fixed in v3.7.2)
+Several files imported scikit-learn, scipy and statsmodels at the top of the file, and the AI assistant's classifier used to train itself the instant its file was imported — all of this happened automatically the moment the server started, before it could open its port. On Render's free 0.1-vCPU instance, that was slow enough to exceed Render's 5-minute port-scan timeout, and because Python hadn't reached any of FinSight's own code yet, nothing appeared in the logs to explain why. From v3.7.2, every heavy import is deferred to actually being used, and the AI assistant trains itself in the background after the server is already accepting requests — verified to open the port in under 10 seconds even under a simulated 10%-CPU throttle.
+
+## If the Render deploy still fails with "Port scan timeout reached" and shows NO logs at all after "Running uvicorn..."
 As of v3.7.1, the database connection now fails after 10 seconds instead of hanging forever, so this specific silent freeze shouldn't happen again — if the database is unreachable, you'll see a clear error in the logs within about 15 seconds instead of a 5-minute blank timeout. If you hit this:
 1. Add `PYTHONUNBUFFERED` = `1` as an environment variable on Render, so log lines appear immediately instead of being buffered.
 2. Redeploy and read the log line starting `FinSight startup: connecting to database...`. If it's followed by an error, the message will say why (wrong password, wrong host, connection refused). Copy the exact error and fix `DATABASE_URL` accordingly — usually it means the string was copied with the password hidden (`****`) or with extra spaces.

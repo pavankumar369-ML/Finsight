@@ -36,6 +36,8 @@ def _warm_up_sync():
     finally:
         db.close()
     metrics.BENCH.update(benchmarks.run_all())
+    from . import assistant_engine
+    assistant_engine.get_intent_model()   # pre-train the assistant's classifier too, not on the first user's question
     state.READY = True
 
 
@@ -56,7 +58,7 @@ async def lifespan(app: FastAPI):
     metrics_store.flush()
 
 
-app = FastAPI(title="FinSight API", version="3.7.1", lifespan=lifespan)
+app = FastAPI(title="FinSight API", version="3.7.2", lifespan=lifespan)
 ORIGINS = [o.strip().rstrip("/") for o in os.getenv("ALLOWED_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173").split(",") if o.strip()]
 app.add_middleware(CORSMiddleware, allow_origins=ORIGINS, allow_origin_regex=os.getenv("ALLOWED_ORIGIN_REGEX") or None,
                    allow_methods=["*"], allow_headers=["*"], expose_headers=["Content-Disposition"], max_age=600)

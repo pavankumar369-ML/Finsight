@@ -3,11 +3,12 @@ Uses the same seed and call order as the prototype evaluation reported in the pr
 import time
 import numpy as np
 import pandas as pd
-from sklearn.ensemble import IsolationForest
-from sklearn.metrics import precision_score, recall_score
+# sklearn/statsmodels imported inside run_all() -- see the note in categorizer.py
 
 
 def run_all():
+    from sklearn.ensemble import IsolationForest
+    from sklearn.metrics import precision_score, recall_score
     np.random.seed(42)
     n = 36
     idx = pd.date_range("2022-01-01", periods=n, freq="MS")

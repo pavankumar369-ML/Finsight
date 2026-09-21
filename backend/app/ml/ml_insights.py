@@ -3,10 +3,7 @@ import math
 from collections import defaultdict
 from datetime import date
 import numpy as np
-from scipy import stats
-from sklearn.cluster import KMeans
-from sklearn.metrics import silhouette_score
-from sklearn.preprocessing import StandardScaler
+# scipy/sklearn imported inside the functions that use them -- see the note in categorizer.py
 from .analytics import month_key
 
 DISCRETIONARY = {"Food", "Shopping", "Entertainment", "Others", "Transport", "Groceries"}
@@ -16,6 +13,9 @@ WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
 def segments(exp):
     """K-Means on (log amount, weekend, day of month) groups spends into behaviour patterns; k picked by silhouette."""
+    from sklearn.cluster import KMeans
+    from sklearn.metrics import silhouette_score
+    from sklearn.preprocessing import StandardScaler
     exp = [t for t in exp if t.category not in FIXED]
     if len(exp) < 40:
         return None
@@ -73,6 +73,7 @@ def _monthly(exp, today):
 
 def trends(exp, today):
     """Linear regression of monthly spend per category; flags statistically meaningful trends."""
+    from scipy import stats
     months, series = _monthly(exp, today)
     if len(months) < 4:
         return {"months": len(months), "items": []}

@@ -4,7 +4,6 @@ from collections import defaultdict
 from datetime import date
 import numpy as np
 import pandas as pd
-from sklearn.ensemble import IsolationForest
 
 
 
@@ -98,6 +97,7 @@ def forecast(txns, today: date):
 def detect_anomalies(txns):
     """Isolation Forest over (log amount, category, weekday, amount vs category median).
     Returns {txn_id: reason} for flagged expenses."""
+    from sklearn.ensemble import IsolationForest
     exp = [t for t in txns if t.type == "expense" and t.category not in ("Rent",)]
     if len(exp) < 30:
         return {}

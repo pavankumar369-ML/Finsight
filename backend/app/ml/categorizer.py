@@ -1,12 +1,13 @@
 """TF-IDF + Logistic Regression transaction categoriser that retrains with user corrections."""
 import json, re, time, threading
 import numpy as np
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.linear_model import LogisticRegression
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import accuracy_score, f1_score, confusion_matrix
-from sklearn.pipeline import make_pipeline
 from . import dataset
+
+# scikit-learn is imported inside train() rather than at module level: importing it is itself
+# a slow step under a throttled CPU (e.g. Render's free tier), and this module is imported as
+# part of the app's startup chain, so a module-level import would block the server from opening
+# its port. Nothing else in this file needs it (predict() only calls methods on an already-fitted
+# pipeline object).
 
 
 def clean(text: str) -> str:
@@ -25,6 +26,11 @@ class Categorizer:
 
     def train(self, corrections=None):
         """corrections: list of (description, category) from users. Returns a metrics report dict."""
+        from sklearn.feature_extraction.text import TfidfVectorizer
+        from sklearn.linear_model import LogisticRegression
+        from sklearn.model_selection import train_test_split
+        from sklearn.metrics import accuracy_score, f1_score, confusion_matrix
+        from sklearn.pipeline import make_pipeline
         rows = dataset.generate()
         corrections = corrections or []
         X = [clean(d) for d, _ in rows]

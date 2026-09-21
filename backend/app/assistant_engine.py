@@ -6,13 +6,15 @@
 3. A TF-IDF + Logistic Regression classifier (trained on labelled example questions at startup)
    predicts one of ~20 intents.
 4. A handler for that intent computes the answer from the user's own data and suggests follow-ups."""
-import calendar, re, time
+import calendar, re, threading, time
 from collections import Counter, defaultdict
 from datetime import date, timedelta
 import numpy as np
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.linear_model import LogisticRegression
-from sklearn.pipeline import FeatureUnion, make_pipeline
+# sklearn imported inside IntentModel (below) rather than at module level -- see the note in
+# categorizer.py. This also means the classifier is no longer trained the instant this file is
+# imported (which used to happen on every app startup, before the server could even open its
+# port); training now happens lazily via get_intent_model(), which main.py's background warm-up
+# task calls once the app is already accepting requests.
 from .ml import analytics as A
 
 # ---------------------------------------------------------------- formatting
@@ -282,6 +284,10 @@ class IntentModel:
                     y.append(intent)
             return X, y
 
+        from sklearn.feature_extraction.text import TfidfVectorizer
+        from sklearn.linear_model import LogisticRegression
+        from sklearn.pipeline import FeatureUnion, make_pipeline
+
         def make():
             return make_pipeline(
                 FeatureUnion([("w", TfidfVectorizer(ngram_range=(1, 2), sublinear_tf=True)),
@@ -309,7 +315,19 @@ class IntentModel:
         return self.pipe.classes_[i], float(p[i])
 
 
-intent_model = IntentModel()
+_intent_model = None
+_intent_lock = threading.Lock()
+
+
+def get_intent_model():
+    """Lazy singleton: the classifier trains on first use, not at import time. Thread-safe so a
+    background warm-up and a concurrent request can't both start training it."""
+    global _intent_model
+    if _intent_model is None:
+        with _intent_lock:
+            if _intent_model is None:
+                _intent_model = IntentModel()
+    return _intent_model
 
 
 # ---------------------------------------------------------------- data helpers
@@ -717,7 +735,7 @@ def answer(question, ctx: Ctx):
                 norm = re.sub(rf"\b{re.escape(w)}\b", " GOAL ", norm)
     norm = re.sub(r"(GOAL\s*)+", "GOAL ", norm)
     norm = _normalise_for_training(norm)
-    intent, conf = intent_model.predict(norm)
+    intent, conf = get_intent_model().predict(norm)
 
     # entity-aware corrections: intents that need an entity fall back sensibly without it
     if intent == "spend_category" and not cat:
@@ -746,6 +764,7 @@ def answer(question, ctx: Ctx):
 
 
 def status():
-    return {"mode": "local", "model": "FinSight NLP engine", "intents": intent_model.n_intents,
-            "intent_accuracy": intent_model.accuracy, "intent_accuracy_std": intent_model.accuracy_std,
-            "training_examples": intent_model.n_examples, "base_phrases": intent_model.n_test, "evaluation": "5-fold cross-validation"}
+    m = get_intent_model()
+    return {"mode": "local", "model": "FinSight NLP engine", "intents": m.n_intents,
+            "intent_accuracy": m.accuracy, "intent_accuracy_std": m.accuracy_std,
+            "training_examples": m.n_examples, "base_phrases": m.n_test, "evaluation": "5-fold cross-validation"}
