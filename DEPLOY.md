@@ -56,6 +56,9 @@ From your laptop, point the reset command at the Neon database once (PowerShell)
 `$env:DATABASE_URL="<your Neon connection string>"; python -m app.manage reset --yes`
 Or in Neon's dashboard: **Branches → Reset from parent**, or run `DROP SCHEMA public CASCADE; CREATE SCHEMA public;` in the SQL Editor, then restart the Render service.
 
+## If Render shows "unsupported startup parameter in options: statement_timeout" (fixed in v3.7.3)
+This was a bug in FinSight's own v3.7.1 database-timeout setting, not something you did wrong: it tried to set a `statement_timeout` connection option that Neon's **pooled** connection endpoint (hostname containing `-pooler`) rejects outright. Removed in v3.7.3. If you still see this on an older version, either update to v3.7.3, or as a workaround use Neon's **unpooled** connection string instead (Neon → Connect → toggle off "Pooled connection").
+
 ## Why the free-tier deploy could time out (fixed in v3.7.2)
 Several files imported scikit-learn, scipy and statsmodels at the top of the file, and the AI assistant's classifier used to train itself the instant its file was imported — all of this happened automatically the moment the server started, before it could open its port. On Render's free 0.1-vCPU instance, that was slow enough to exceed Render's 5-minute port-scan timeout, and because Python hadn't reached any of FinSight's own code yet, nothing appeared in the logs to explain why. From v3.7.2, every heavy import is deferred to actually being used, and the AI assistant trains itself in the background after the server is already accepting requests — verified to open the port in under 10 seconds even under a simulated 10%-CPU throttle.
 

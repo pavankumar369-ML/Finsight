@@ -13,8 +13,10 @@ else:
     # connect_timeout: fail fast (10s) instead of hanging indefinitely if the database is unreachable --
     # a silent hang here previously looked identical to a slow-starting app and caused Render's deploy
     # to time out with no error message at all.
+    # NOTE: don't add "options": "-c statement_timeout=..." here -- Neon's pooled (PgBouncer)
+    # connection endpoint (hostname contains "-pooler") rejects that startup parameter outright.
     engine = create_engine(DB_URL, pool_pre_ping=True, pool_size=5, max_overflow=5, pool_recycle=280,
-                           connect_args={"connect_timeout": 10, "options": "-c statement_timeout=15000"})
+                           connect_args={"connect_timeout": 10})
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 Base = declarative_base()
 
