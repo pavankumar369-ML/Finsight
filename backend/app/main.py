@@ -5,7 +5,7 @@ from .auth import SECRET
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from .db import init_db, SessionLocal, ModelRun, Transaction, engine
+from .db import init_db, SessionLocal, ModelRun, Transaction, engine, DB_URL
 from .ml.categorizer import categorizer
 from .ml import benchmarks
 from . import metrics_store, state
@@ -41,7 +41,12 @@ def _warm_up_sync():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    log = logging.getLogger("uvicorn.error")
+    log.info("FinSight startup: connecting to database (%s)...",
+             "postgres" if not DB_URL.startswith("sqlite") else "sqlite")
+    t0 = time.time()
     init_db()                    # fast: create/alter tables only
+    log.info("FinSight startup: database ready in %.1fs", time.time() - t0)
     metrics_store.load_history()
     task = asyncio.create_task(_flusher())
     warm = asyncio.create_task(asyncio.to_thread(_warm_up_sync))
@@ -51,7 +56,7 @@ async def lifespan(app: FastAPI):
     metrics_store.flush()
 
 
-app = FastAPI(title="FinSight API", version="3.7.0", lifespan=lifespan)
+app = FastAPI(title="FinSight API", version="3.7.1", lifespan=lifespan)
 ORIGINS = [o.strip().rstrip("/") for o in os.getenv("ALLOWED_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173").split(",") if o.strip()]
 app.add_middleware(CORSMiddleware, allow_origins=ORIGINS, allow_origin_regex=os.getenv("ALLOWED_ORIGIN_REGEX") or None,
                    allow_methods=["*"], allow_headers=["*"], expose_headers=["Content-Disposition"], max_age=600)

@@ -10,7 +10,11 @@ if DB_URL.startswith("postgres://"):          # Render/Neon/Heroku style URLs
 if DB_URL.startswith("sqlite"):
     engine = create_engine(DB_URL, connect_args={"check_same_thread": False})
 else:
-    engine = create_engine(DB_URL, pool_pre_ping=True, pool_size=5, max_overflow=5, pool_recycle=280)
+    # connect_timeout: fail fast (10s) instead of hanging indefinitely if the database is unreachable --
+    # a silent hang here previously looked identical to a slow-starting app and caused Render's deploy
+    # to time out with no error message at all.
+    engine = create_engine(DB_URL, pool_pre_ping=True, pool_size=5, max_overflow=5, pool_recycle=280,
+                           connect_args={"connect_timeout": 10, "options": "-c statement_timeout=15000"})
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 Base = declarative_base()
 

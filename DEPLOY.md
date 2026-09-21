@@ -56,7 +56,13 @@ From your laptop, point the reset command at the Neon database once (PowerShell)
 `$env:DATABASE_URL="<your Neon connection string>"; python -m app.manage reset --yes`
 Or in Neon's dashboard: **Branches → Reset from parent**, or run `DROP SCHEMA public CASCADE; CREATE SCHEMA public;` in the SQL Editor, then restart the Render service.
 
-## If the Render deploy fails with "Port scan timeout reached"
+## If the Render deploy fails with "Port scan timeout reached" and shows NO logs at all after "Running uvicorn..."
+As of v3.7.1, the database connection now fails after 10 seconds instead of hanging forever, so this specific silent freeze shouldn't happen again — if the database is unreachable, you'll see a clear error in the logs within about 15 seconds instead of a 5-minute blank timeout. If you hit this:
+1. Add `PYTHONUNBUFFERED` = `1` as an environment variable on Render, so log lines appear immediately instead of being buffered.
+2. Redeploy and read the log line starting `FinSight startup: connecting to database...`. If it's followed by an error, the message will say why (wrong password, wrong host, connection refused). Copy the exact error and fix `DATABASE_URL` accordingly — usually it means the string was copied with the password hidden (`****`) or with extra spaces.
+3. Confirm your Neon connection string still works by pasting it into DB Browser for SQLite... no — Neon isn't SQLite. Instead, go to Neon → your project → **Connect** → copy it fresh (with **Show password** on) and replace `DATABASE_URL` on Render.
+
+## If the Render deploy fails with "Port scan timeout reached" (older versions, before v3.7)
 This is fixed from v3.7 onward: the server opens its port immediately and trains the model in the background, so this shouldn't happen anymore. If you're deploying an older version, redeploy from the latest code. You can confirm the fix is active by checking `RENDER_URL/api/health` shortly after a deploy — it should return `"ready": false` for a few seconds, then `true`, rather than the page failing to load at all.
 
 ## Troubleshooting
