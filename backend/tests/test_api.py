@@ -153,7 +153,7 @@ def test_recurring_and_notifications(client, demo):
 
 def test_assistant_offline_answers_from_data(client, demo):
     r = client.post("/api/assistant/chat", headers=demo, json={"message": "How much did I spend on food last month?"}).json()
-    assert r["assistant"]["mode"] == "offline" and "Food" in r["assistant"]["content"] and "₹" in r["assistant"]["content"]
+    assert r["intent"] == "spend_category" and "Food" in r["assistant"]["content"] and "₹" in r["assistant"]["content"]
     assert r["assistant"]["ms"] is not None
     hist = client.get("/api/assistant/history", headers=demo).json()["messages"]
     assert hist[-1]["role"] == "assistant" and hist[-2]["role"] == "user"
@@ -171,23 +171,41 @@ def test_assistant_empty_account(client, user):
         assert client.get(path, headers=h).status_code == 200, path
 
 
-def test_assistant_llm_path_and_fallback(client, demo, monkeypatch):
-    from app import assistant as AI
-    seen = {}
+def test_assistant_understands_varied_questions(client, demo):
+    cases = {
+        "How much did I spend on food last month?": ("spend_category", "Food"),
+        "how much on swiggy": ("spend_merchant", "Swiggy"),
+        "what did i spend in august": ("spend_total", None),
+        "Am I over any budget?": ("budget_status", None),
+        "how much budget left for shopping": ("budget_status", "Shopping"),
+        "how much can I spend per day": ("daily_allowance", None),
+        "what bills are coming up": ("recurring", None),
+        "forecast for transport": ("forecast", "Transport"),
+        "anything suspicious?": ("anomalies", None),
+        "where does most of my money go": ("top_categories", None),
+        "biggest purchase in july": ("biggest_txn", None),
+        "compare this month with last month": ("compare", None),
+        "what's my financial health": ("health", None),
+        "do i spend more on weekends": ("weekday", None),
+        "how can i save more": ("tips", None),
+        "how much did I earn last month": ("income", None),
+    }
+    for q, (intent, cat) in cases.items():
+        r = client.post("/api/assistant/chat", headers=demo, json={"message": q}).json()
+        assert r["intent"] == intent, (q, r["intent"])
+        if cat and intent != "spend_merchant":
+            assert r["entities"]["category"] == cat, (q, r["entities"])
+        assert "₹" in r["assistant"]["content"] or intent in ("health", "weekday", "anomalies"), q
+        assert r["suggestions"], q
+    off = client.post("/api/assistant/chat", headers=demo, json={"message": "what is the weather today"}).json()
+    assert off["intent"] == "unknown"
 
-    def fake_llm(question, context, history):
-        seen["ctx"] = context
-        return "You spent **₹7,399** on food last month."
-    monkeypatch.setattr(AI, "LLM_API_KEY", "test-key")
-    monkeypatch.setattr(AI, "ask_llm", fake_llm)
-    r = client.post("/api/assistant/chat", headers=demo, json={"message": "food last month?"}).json()
-    assert r["assistant"]["mode"] == "llm" and "budgets" in seen["ctx"] and seen["ctx"]["transaction_count"] > 100
 
-    def broken(*a):
-        raise TimeoutError("api down")
-    monkeypatch.setattr(AI, "ask_llm", broken)
-    r = client.post("/api/assistant/chat", headers=demo, json={"message": "food last month?"}).json()
-    assert r["assistant"]["mode"] == "offline" and r["fallback_reason"] == "TimeoutError"
+def test_assistant_is_local_and_measured(client, demo):
+    s = client.get("/api/assistant/status", headers=demo).json()
+    assert s["mode"] == "local" and s["intent_accuracy"] >= 80 and s["intents"] >= 20
+    m = client.get("/api/metrics/models", headers=demo).json()["assistant"]
+    assert m["count"] >= 1 and m["avg_ms"] < 5000
 
 
 def test_export_csv(client, demo):
@@ -321,4 +339,11 @@ def test_user_metrics(client, demo):
     m = client.get("/api/metrics/users", headers=demo).json()
     assert m["registered_users"] >= 2 and m["active_now"] >= 1 and m["total_logins"] >= m["logins_today"] >= 2
     assert m["demo_sessions"] >= 1 and len(m["series"]) == 14
+    assert m["activated_users"] >= 1 and m["activated_users"] <= m["registered_users"] and "returning_users" in m
     assert "email" not in str(m)            # aggregate only, no personal data
+
+
+def test_manage_reset_requires_confirmation(capsys):
+    from app import manage
+    assert manage.main(["manage", "reset"]) == 1
+    assert "--yes" in capsys.readouterr().out

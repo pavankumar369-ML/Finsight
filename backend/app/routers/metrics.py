@@ -118,7 +118,18 @@ def users(user: User = Depends(current_user), db: Session = Depends(get_db)):
         signups[ts.date()] += 1
     series = [{"day": (start + timedelta(days=i)).date().isoformat(), "logins": logins[(start + timedelta(days=i)).date()],
                "signups": signups[(start + timedelta(days=i)).date()]} for i in range(days)]
+    real_ids = [r[0] for r in real.with_entities(User.id).all()]
+    activated = db.query(func.count(func.distinct(Transaction.user_id))).filter(Transaction.user_id.in_(real_ids)).scalar() if real_ids else 0
+    login_days = defaultdict(set)
+    for uid, ts in events.filter(LoginEvent.user_id.in_(real_ids)).with_entities(LoginEvent.user_id, LoginEvent.ts).all() if real_ids else []:
+        login_days[uid].add(ts.date())
+    for uid, seen in real.with_entities(User.id, User.last_seen).all():
+        if seen:
+            login_days[uid].add(seen.date())
+    returning = sum(1 for d in login_days.values() if len(d) >= 2)
     return {
+        "activated_users": int(activated or 0),
+        "returning_users": returning,
         "registered_users": real.count(),
         "new_today": real.filter(User.created_at >= today).count(),
         "active_now": db.query(User).filter(User.last_seen >= now - timedelta(minutes=5)).count(),

@@ -25,8 +25,8 @@ npm run dev
 ```
 Open **http://localhost:5173** and click **Explore with 6 months of demo data**, or sign in with `demo@finsight.app` / `demo1234`.
 
-**3. Optional: API key for the AI assistant (not required)**
-No API key is needed to run FinSight. Every ML feature (categoriser, forecasts, anomaly detection, clustering, trends) runs locally with scikit-learn, and the assistant works out of the box in offline mode (answers computed from your data). For open-ended conversation, copy `backend/.env.example` to `backend/.env`, paste a free API key (Groq or Gemini), and restart the backend. The Assistant page then shows the model name, and the Metrics page measures real LLM response time.
+**3. No API keys needed**
+Everything, including the AI assistant, runs locally with scikit-learn. No data is sent to any outside service.
 
 **4. Tests**
 ```bash
@@ -45,14 +45,14 @@ pytest -q
 | Budgets | Per-category limits, inline editing, projection that blends pace with the forecast (fixed bills handled separately), daily allowance |
 | Insights | Holt-Winters forecast per category with backtest error, trend chart, 50/30/20 check, generated tips, anomaly list with reasons |
 | Metrics | Document targets vs live values, request latency p50/p95/p99, throughput, status codes, per-endpoint table, in-browser load test, model accuracy/F1, confusion matrix, per-class F1, confidence histogram, retrain with user corrections, forecaster and anomaly benchmarks |
-| **AI assistant (v2)** | Chat grounded in your own data (months, categories, budgets, goals, forecast, bills, anomalies). Uses any OpenAI-compatible LLM (Groq, Gemini, OpenAI); falls back to a built-in offline engine if no key is set or the API fails. Every reply is timed |
+| **AI assistant (v3.2)** | Local NLP engine, no external API. A TF-IDF + Logistic Regression intent classifier (21 intents, 87.2% ± 4.5 accuracy on unseen phrasings, 5-fold cross-validation) plus entity extraction for time periods ("last month", "in August", "last 3 months"), categories, merchants and goals. Answers from the user's own data in a few milliseconds, suggests follow-up questions, and declines off-topic questions |
 | **Savings goals (v2)** | Goals with emoji, target, deadline; quick add/withdraw; finish-date projection from your average monthly savings; required monthly amount for deadlines |
 | **Recurring bills (v2)** | Detects subscriptions and bills (3+ months, ~monthly gap, stable amount, not everyday merchants); next due date and monthly total |
 | **Notifications (v2)** | Bell with unread count: budget overruns, bills due within 7 days, unusual spends, goal milestones |
 | **ML insights (v3)** | K-Means spending segments (k chosen by silhouette score) with scatter plot; trend detection by linear regression with p-values; variance decomposition of what makes months differ; weekday rhythm; interactive what-if simulator that recalculates savings and goal finish dates |
 | **Smart import (v3)** | CSV, XLSX and XLS. Finds the table below bank preamble rows, maps headers like "Withdrawal Amt." or "Transaction Remarks", reads amounts like "₹1,250.00 Dr", "(500)", "Nil" and amounts in words ("two thousand five hundred", "Rs. Three lakh only"), Excel serial dates, Dr/Cr columns, and skips opening/closing balance rows. Shows which columns were detected |
 | **PDF import (v3.1)** | Text-based bank e-statements across many pages; ruled tables or plain text lines; password-protected PDFs (the dialog asks for the password); clear message for scanned PDFs |
-| **User metrics (v3.1)** | Metrics page shows registered users, active now (last 5 min), active today / 7 days, sign-ins all time and today, and a 14-day chart. Aggregate counts only |
+| **User metrics (v3.1)** | Metrics page shows registered, activated (imported or added data) and returning users, active now (last 5 min), active today / 7 days, sign-ins, and a 14-day chart. Aggregate counts only |
 | **Production (v3)** | Postgres via `DATABASE_URL`, CORS from env, sign-in rate limiting (10 attempts / 5 min), security headers, Render blueprint, Vercel config |
 | **Export (v2)** | Download the filtered transaction list as CSV |
 | UI | Dark and light themes, responsive down to phones, keyboard shortcut **N** to add a transaction, reduced-motion support |
@@ -75,7 +75,7 @@ pytest -q
 | Anomaly precision / recall | ≥ 80% / ≥ 75% | 92% / 92% |
 | CSV import + categorise, 500 rows | < 3 s | ~20–60 ms |
 | Dashboard API response (60-request load test) | < 500 ms | ~114 ms avg |
-| AI assistant response | < 5 s | Offline engine < 1 ms; LLM mode measured live on the Metrics page |
+| AI assistant response | < 5 s | ~2–8 ms (local NLP engine) |
 
 Exact values vary slightly by machine; the Metrics page shows the live numbers.
 
@@ -87,10 +87,11 @@ backend/
     db.py  auth.py  schemas.py  seed.py  services.py  metrics_store.py
     ml/                  dataset, categorizer, analytics (forecast, anomalies, health), benchmarks
     routers/             auth, transactions (+CSV), analytics (dashboard, budgets, insights), metrics
-    assistant.py         LLM client, data context builder, offline answer engine
+    assistant_engine.py  NLP assistant: intent classifier, entity extraction, 21 answer handlers
+    manage.py            admin commands: stats, reset database, reset chats
     statement_parser.py  CSV/Excel reader: header detection, column mapping, amounts in words
     ml/ml_insights.py    K-Means segments, regression trends, variance drivers, what-if base
-  tests/test_api.py      31 API tests (incl. mocked LLM, Excel and PDF import, password PDFs, ML insights, user metrics, rate limit)
+  tests/test_api.py      33 API tests (incl. assistant intent understanding, Excel and PDF import, password PDFs, ML insights, user metrics, rate limit)
 frontend/
   src/
     pages/               Login, Dashboard, Transactions, Assistant, Budgets, Goals, Insights, Metrics
@@ -130,6 +131,13 @@ frontend/
 | Three clusters with medians ₹249/₹270/₹310 were named small/mid/large | Names now come from the feature that separates them (size, weekend share, time of month) |
 | Import dialog still rejected .xlsx files | File check accepts .csv, .xlsx, .xls, .xlsm; verified by uploading an ICICI-style Excel file in the browser |
 | Verified deployed topology locally: frontend built with `VITE_API_URL` on a different origin, backend CORS limited to that origin | All pages, import and API calls work cross-origin with no console errors |
+
+## Admin commands (run inside `backend`, with the server stopped)
+| Command | What it does |
+|---|---|
+| `python -m app.manage stats` | Row count for every table |
+| `python -m app.manage reset --yes` | Deletes **all** data (SQLite or Postgres) and recreates empty tables. The demo account returns on next start |
+| `python -m app.manage reset-chats --yes` | Deletes only assistant chat history |
 
 ## Database upgrades are automatic
 New columns (for example the user-activity fields in v3.1) are added to an existing `finsight.db` or Postgres database on startup, so existing data is kept. There's no need to delete the database when updating.

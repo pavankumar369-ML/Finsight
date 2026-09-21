@@ -36,7 +36,6 @@ Why not Firebase? FinSight's backend uses SQL through SQLAlchemy. Firebase is a 
    | `ALLOWED_ORIGINS` | your Vercel URL, filled in after step 3 (e.g. `https://finsight-pavan.vercel.app`) |
    | `ALLOWED_ORIGIN_REGEX` | `https://.*\.vercel\.app` |
    | `DATABASE_URL` | Neon connection string (optional, see step 1) |
-   | `LLM_API_KEY` | optional Groq/Gemini key (see README) |
 4. **Create Web Service**. First build takes ~5 minutes. When it's live, open `https://<your-service>.onrender.com/api/health`; you should see `{"ok": true, ...}`.
 
 Alternative: **New + → Blueprint** uses `render.yaml` from the repo and pre-fills all of the above.
@@ -50,6 +49,11 @@ Alternative: **New + → Blueprint** uses `render.yaml` from the repo and pre-fi
 ## 4. Connect them
 1. Back in Render → your service → **Environment** → set `ALLOWED_ORIGINS` to the exact Vercel URL → **Save** (it redeploys).
 2. Open the Vercel URL → **Explore with 6 months of demo data**.
+
+## Clearing all data on the live site
+From your laptop, point the reset command at the Neon database once (PowerShell):
+`$env:DATABASE_URL="<your Neon connection string>"; python -m app.manage reset --yes`
+Or in Neon's dashboard: **Branches → Reset from parent**, or run `DROP SCHEMA public CASCADE; CREATE SCHEMA public;` in the SQL Editor, then restart the Render service.
 
 ## Troubleshooting
 | Symptom | Fix |

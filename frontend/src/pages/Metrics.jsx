@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Line, LineChart, Tooltip, XAxis, YAxis, ReferenceLine } from "recharts";
-import { BrainCircuit, CheckCircle2, Clock, Gauge, Pause, Play, RefreshCw, Rocket, XCircle, CircleDashed, Users, UserCheck, LogIn, UserPlus } from "lucide-react";
+import { BrainCircuit, CheckCircle2, Clock, Gauge, Pause, Play, RefreshCw, Rocket, XCircle, CircleDashed, Users, UserCheck, LogIn, UserPlus, Repeat2, Activity } from "lucide-react";
 import clsx from "clsx";
 import { api, dataChanged } from "../lib/api";
 import { useApi, useTokens } from "../lib/hooks";
@@ -65,9 +65,8 @@ function ReviewCard({ live, models, load }) {
     (() => {
       const a = models.assistant;
       if (!a?.count) return { name: "AI assistant response", target: "< 5 s", value: "Ask it something", pass: null, note: "no replies measured yet" };
-      const v = a.llm_count ? a.llm_avg_ms : a.avg_ms;
-      return { name: "AI assistant response", target: "< 5 s", value: ms(v), pass: a.llm_count ? v < 5000 : null,
-        note: a.llm_count ? `${a.llm_count} LLM replies, average` : "offline engine only; add an LLM key to measure" };
+      return { name: "AI assistant response", target: "< 5 s", value: ms(a.avg_ms), pass: a.avg_ms < 5000,
+        note: `${a.count} replies · local NLP, intent accuracy ${a.intent_accuracy}%` };
     })(),
   ] : null;
   const passed = rows?.filter((r) => r.pass).length;
@@ -426,7 +425,7 @@ function UsersSection({ paused }) {
         <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">{[0, 1, 2, 3, 4].map((i) => <Skeleton key={i} className="h-28 rounded-[20px]" />)}</div>
       ) : (
         <div className="grid grid-cols-12 gap-4 lg:gap-5">
-          <div className="col-span-12 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:gap-5 xl:grid-cols-5">
+          <div className="col-span-12 grid grid-cols-2 gap-4 sm:grid-cols-4 lg:gap-5">
             <Card className="p-4 sm:p-5">
               <div className="flex items-center justify-between text-[13px] text-muted">Active now
                 <span className="relative flex h-2 w-2"><span className={clsx("relative h-2 w-2 rounded-full bg-mint", !paused && "live-dot")} /></span></div>
@@ -434,7 +433,9 @@ function UsersSection({ paused }) {
               <p className="mt-0.5 text-[12px] text-faint">seen in the last {u.active_window_minutes} min</p>
             </Card>
             <Kpi label="Registered users" value={u.registered_users} format={(v) => Math.round(v).toLocaleString("en-IN")} icon={Users} sub={`${u.new_today} new today · demo excluded`} />
-            <Kpi label="Active today" value={u.active_today} format={(v) => Math.round(v).toLocaleString("en-IN")} icon={UserCheck} sub={`${u.active_7d} in the last 7 days`} />
+            <Kpi label="Activated users" value={u.activated_users} format={(v) => Math.round(v).toLocaleString("en-IN")} icon={UserCheck} sub="imported or added data" />
+            <Kpi label="Returning users" value={u.returning_users} format={(v) => Math.round(v).toLocaleString("en-IN")} icon={Repeat2} sub="came back on another day" />
+            <Kpi label="Active today" value={u.active_today} format={(v) => Math.round(v).toLocaleString("en-IN")} icon={Activity} sub={`${u.active_7d} in the last 7 days`} />
             <Kpi label="Sign-ins, all time" value={u.total_logins} format={(v) => Math.round(v).toLocaleString("en-IN")} icon={LogIn} sub={`${u.demo_sessions} were demo sessions`} />
             <Kpi label="Sign-ins today" value={u.logins_today} format={(v) => Math.round(v).toLocaleString("en-IN")} icon={UserPlus} />
           </div>
