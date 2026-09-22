@@ -480,3 +480,11 @@ def test_bulk_and_delete_all(client, demo):
     assert client.post("/api/transactions/delete-all", headers=h, json={"confirm": "DELETE"}).json()["deleted"] == 2
     assert client.get("/api/transactions", headers=h).json()["total"] == 0
     assert client.post("/api/transactions/delete-all", headers=demo, json={"confirm": "DELETE"}).status_code == 403
+
+
+def test_health_and_root_answer_head_requests(client):
+    """Monitoring tools (UptimeRobot, Render's own load balancer) probe with HEAD, not GET."""
+    for path in ("/api/health", "/"):
+        g = client.get(path)
+        h = client.request("HEAD", path)
+        assert h.status_code == g.status_code == 200 and h.content == b""

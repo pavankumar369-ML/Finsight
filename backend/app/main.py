@@ -108,7 +108,7 @@ async def lifespan(app: FastAPI):
     metrics_store.flush()
 
 
-app = FastAPI(title="FinSight API", version="3.8.0", lifespan=lifespan)
+app = FastAPI(title="FinSight API", version="3.8.1", lifespan=lifespan)
 ORIGINS = [o.strip().rstrip("/") for o in os.getenv("ALLOWED_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173").split(",") if o.strip()]
 app.add_middleware(CORSMiddleware, allow_origins=ORIGINS, allow_origin_regex=os.getenv("ALLOWED_ORIGIN_REGEX") or None,
                    allow_methods=["*"], allow_headers=["*"], expose_headers=["Content-Disposition"], max_age=600)
@@ -157,14 +157,14 @@ async def timing(request: Request, call_next):
         metrics_store.record(request.method, request.url.path, status, ms)
 
 
-@app.get("/api/health")
+@app.api_route("/api/health", methods=["GET", "HEAD"])
 def health():
     return {"ok": True, "model_ready": categorizer.pipe is not None, "ready": state.READY,
             "warm_up_error": state.WARM_UP_ERROR, "version": app.version,
             "database": "postgres" if not str(engine.url).startswith("sqlite") else "sqlite"}
 
 
-@app.get("/")
+@app.api_route("/", methods=["GET", "HEAD"])
 def root():
     return {"name": "FinSight API", "version": app.version, "docs": "/docs", "health": "/api/health"}
 

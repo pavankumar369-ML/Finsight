@@ -22,7 +22,7 @@ export async function api(path, { method = "GET", body, form } = {}) {
     res = await fetch(apiUrl(path), { method, headers, body: form ?? (body !== undefined ? JSON.stringify(body) : undefined) });
   } catch {
     throw new ApiError(API_BASE
-      ? "Can't reach the FinSight server. It is currently hosted on Render's free plan it may be waking up; try again in 30 seconds."
+      ? "Can't reach the FinSight server. It is hosted on Render's free plan it may be waking up; try again in 30 seconds."
       : "Can't reach the FinSight server. Check that the backend is running on port 8000.", 0);
   }
   if (res.status === 204) return null;
