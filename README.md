@@ -1,170 +1,201 @@
 # FinSight — AI-powered Personal Finance Management System
 
-**Version 3 (final).** React + FastAPI + scikit-learn. AI assistant, ML insights, CSV / Excel / PDF statement import, live user metrics. Deployable to Vercel + Render (see [DEPLOY.md](DEPLOY.md)). Imports bank statements, auto-categorises UPI/POS/NEFT transactions, forecasts next month's spending, flags unusual spends and scores financial health. A live **Metrics** page measures the running system against the targets in the project document.
+> Know where your money went, and where it's heading.
 
-## Run it locally
+**Live demo:** [finsight-sigma-three.vercel.app](https://finsight-sigma-three.vercel.app/login)
+&nbsp;·&nbsp;
+**GitHub:** [github.com/pavankumar369-ML/Finsight](https://github.com/pavankumar369-ML/Finsight)
 
-You need **Python 3.10+** and **Node.js 18+**.
+---
+<img width="1917" height="912" alt="image" src="https://github.com/user-attachments/assets/25ac308b-8d7d-433e-912a-4ecea2ca5b42" />
 
-**1. Backend** (terminal 1)
+---
+
+## What it does
+
+FinSight is a full-stack personal finance web app that analyses your Indian bank statements. Upload a CSV, Excel or PDF statement and the system:
+
+- **Categorises every UPI/NEFT/IMPS payment** using a TF-IDF + Logistic Regression classifier trained on 4,697 real Indian bank narrations (94.68% accuracy)
+- **Forecasts next month's spend per category** using Holt-Winters exponential smoothing, with a weighted-average fallback for short histories (3.63% MAPE on held-out data)
+- **Flags unusual transactions** automatically with Isolation Forest (92% precision, 92% recall)
+- **Answers questions in plain English** via a private NLP assistant that runs entirely on the server — no data ever leaves FinSight
+- **Tracks budgets, savings goals and recurring bills** and warns you before you overspend
+
+---
+
+## Screenshots
+
+<img width="1918" height="912" alt="image" src="https://github.com/user-attachments/assets/93a49b06-6dd7-42db-8701-2d7b21cc98e2" />
+
+
+---
+
+<img width="1917" height="911" alt="image" src="https://github.com/user-attachments/assets/a45ddf49-e1d9-48b2-9ed5-46ee6a7de38e" />
+
+
+---
+
+<img width="1918" height="908" alt="image" src="https://github.com/user-attachments/assets/10a4dcc7-8065-4d85-8b31-8d39c6ebada7" />
+
+
+---
+
+<img width="1918" height="911" alt="image" src="https://github.com/user-attachments/assets/9375eef8-bde6-426d-aa56-4f21550c3d3e" />
+
+
+---
+
+<img width="1918" height="911" alt="image" src="https://github.com/user-attachments/assets/da80cd25-667f-49a2-867a-b4de435cfb31" />
+
+
+---
+
+<img width="1918" height="908" alt="image" src="https://github.com/user-attachments/assets/3ee5fe8a-9602-4cfd-b771-6715de39e645" />
+
+---
+
+<img width="1918" height="908" alt="image" src="https://github.com/user-attachments/assets/45997dc6-3dac-4a5d-8997-bdf7cf03a1e3" />
+
+---
+
+## Tech stack
+
+| Layer | Technology |
+|---|---|
+| **Frontend** | React 18, Vite, Tailwind CSS, Recharts, Motion |
+| **Backend** | FastAPI (Python 3.12), SQLAlchemy, JWT auth |
+| **ML / NLP** | scikit-learn, statsmodels, SciPy, NumPy |
+| **Database** | PostgreSQL (Neon, permanent cloud storage) |
+| **Deployment** | Render (backend), Vercel (frontend) |
+| **Monitoring** | UptimeRobot (always-on, 5-minute pings) |
+
+---
+
+## ML performance targets (all met on live system)
+
+| Metric | Target | Measured |
+|---|---|---|
+| Categorisation accuracy (940 test samples) | ≥ 90% | **94.68%** |
+| Categorisation macro F1 | ≥ 0.85 | **0.948** |
+| Inference time per transaction | < 50 ms | **~1 ms** |
+| Forecast error (MAPE, 4 held-out months) | ≤ 20% | **3.63%** |
+| Anomaly precision / recall | ≥ 80% / ≥ 75% | **92% / 92%** |
+| CSV import, 500 rows | < 3 s | **~20 ms** |
+| Dashboard API response | < 500 ms | **~100 ms** |
+| AI assistant response (local NLP) | < 5 s | **~3 ms** |
+
+These numbers are measured live from the running system, not from a notebook. Open the **Metrics** page on the live site to see them yourself.
+
+---
+
+## Key features
+
+### Statement import
+- CSV, Excel (.xlsx / .xls) and **PDF** (multi-page tables, text-layout statements, password-protected)
+- Every import is a batch — undo a wrong file in one click
+- Duplicate detection: importing overlapping date ranges never double-counts
+
+### AI assistant (private, no API key)
+- Understands **21 question types** with a TF-IDF + Logistic Regression intent classifier (87.2% ± 4.5% accuracy, 5-fold cross-validation on unseen phrasing)
+- Entity extraction: dates ("last month", "in August"), categories, merchant names, goal names
+- Answers from your data, entirely on the server — zero external API calls
+- Suggests follow-up questions after every answer
+
+### Budgets and goals
+- Monthly budget per category with live pacing (are you ahead or behind the calendar?)
+- Savings goals with ETA based on your recent savings rate
+- Daily allowance: how much can you spend today and still stay within budget?
+
+### Metrics page (public, read-only)
+- Document targets checked against live system measurements, refreshed every 2 seconds
+- Admin-only controls: retrain model, run load test, view user statistics
+- Retraining uses only trusted accounts (min. 10 transactions, demo account excluded, max 50 corrections per user) to prevent data poisoning
+
+### Security
+- bcrypt password hashing, stateless JWT sessions
+- Admin role set by server environment variable only — no admin signup page
+- Per-IP rate limiting (300 req/min general, 10 attempts / 5 min for auth)
+- CORS restricted to the production Vercel domain
+
+---
+
+## Fast cold starts (production)
+Models are **pre-trained during Render's build step** (`python -m app.build_artifacts`), so the server loads them instead of training at startup. Forecasts and ML insights are cached in the database by a fingerprint of each user's transactions and read back after a restart. The result: the server is fully ready in under 30 seconds even on Render's free 0.1-vCPU tier.
+
+---
+
+## Running locally
+
+### Prerequisites
+- Python 3.12, Node.js 18+
+
+### Backend
 ```bash
 cd backend
-python -m venv venv
-venv\Scripts\activate          # Windows
-# source venv/bin/activate     # macOS / Linux
+python -m venv venv && venv\Scripts\activate   # Windows
 pip install -r requirements.txt
+python -m app.build_artifacts                  # build pre-trained models once
 uvicorn app.main:app --reload --port 8000
 ```
-First start takes a few seconds: it trains the categoriser, runs the benchmarks and creates the demo account. API docs: http://localhost:8000/docs
 
-**2. Frontend** (terminal 2)
+### Frontend
 ```bash
 cd frontend
 npm install
-npm run dev
+npm run dev                                    # http://localhost:5173
 ```
-Open **http://localhost:5173** and click **Explore with 6 months of demo data**, or sign in with `demo@finsight.app` / `demo1234`.
 
-**3. No API keys needed**
-Everything, including the AI assistant, runs locally with scikit-learn. No data is sent to any outside service.
+The backend defaults to SQLite (`finsight.db`) locally. Set `DATABASE_URL` in `backend/.env` to use PostgreSQL.
 
-**4. Tests**
+### Admin access (local)
+Create `backend/.env` and set `ADMIN_EMAILS=your@email.com`, then sign up with that email. Run `python -m app.manage admins` to confirm.
+
+---
+
+## Deployment guide
+See [DEPLOY.md](DEPLOY.md) for the full step-by-step: Neon (free Postgres) → Render (backend) → Vercel (frontend) → UptimeRobot (keep-alive).
+
+---
+
+## Tests (42 automated)
 ```bash
-cd backend
-pytest -q
+cd backend && python -m pytest -v
 ```
+Covers: auth, JWT, privacy between users, CSV / Excel / PDF import (incl. password-protected PDFs), ML categorisation and insights, assistant understanding of 16 question types, admin access control, data-poisoning guard, rate limiting, HEAD requests on monitoring endpoints. Run with and without pre-built artifacts and on both SQLite and PostgreSQL.
 
-## Features in v1
-
-| Area | What it does |
-|---|---|
-| Auth | Register / sign in with bcrypt-hashed passwords and JWT sessions; change password (key icon next to your name); one-click demo account |
-| Overview | Pace meter (budget used vs month elapsed, projected month-end), spend curve vs last month, health score, cash flow, category split, recent activity, unusual spends |
-| Transactions | Search and filters, live category suggestion with top-3 probabilities while typing, one-click category correction, edit/delete with undo, pagination |
-| CSV import | Drag-and-drop; handles Debit/Credit columns, signed Amount, Type column, Indian date formats, duplicate detection, row errors, 5 MB limit |
-| Budgets | Per-category limits, inline editing, projection that blends pace with the forecast (fixed bills handled separately), daily allowance |
-| Insights | Holt-Winters forecast per category with backtest error, trend chart, 50/30/20 check, generated tips, anomaly list with reasons |
-| Metrics | Document targets vs live values, request latency p50/p95/p99, throughput, status codes, per-endpoint table, in-browser load test, model accuracy/F1, confusion matrix, per-class F1, confidence histogram, retrain with user corrections, forecaster and anomaly benchmarks |
-| **AI assistant (v3.2)** | Local NLP engine, no external API. A TF-IDF + Logistic Regression intent classifier (21 intents, 87.2% ± 4.5 accuracy on unseen phrasings, 5-fold cross-validation) plus entity extraction for time periods ("last month", "in August", "last 3 months"), categories, merchants and goals. Answers from the user's own data in a few milliseconds, suggests follow-up questions, and declines off-topic questions |
-| **Savings goals (v2)** | Goals with emoji, target, deadline; quick add/withdraw; finish-date projection from your average monthly savings; required monthly amount for deadlines |
-| **Recurring bills (v2)** | Detects subscriptions and bills (3+ months, ~monthly gap, stable amount, not everyday merchants); next due date and monthly total |
-| **Notifications (v2)** | Bell with unread count: budget overruns, bills due within 7 days, unusual spends, goal milestones |
-| **ML insights (v3)** | K-Means spending segments (k chosen by silhouette score) with scatter plot; trend detection by linear regression with p-values; variance decomposition of what makes months differ; weekday rhythm; interactive what-if simulator that recalculates savings and goal finish dates |
-| **Smart import (v3)** | CSV, XLSX and XLS. Finds the table below bank preamble rows, maps headers like "Withdrawal Amt." or "Transaction Remarks", reads amounts like "₹1,250.00 Dr", "(500)", "Nil" and amounts in words ("two thousand five hundred", "Rs. Three lakh only"), Excel serial dates, Dr/Cr columns, and skips opening/closing balance rows. Shows which columns were detected |
-| **PDF import (v3.1)** | Text-based bank e-statements across many pages; ruled tables or plain text lines; password-protected PDFs (the dialog asks for the password); clear message for scanned PDFs |
-| **User metrics (v3.1)** | Metrics page shows registered, activated (imported or added data) and returning users, active now (last 5 min), active today / 7 days, sign-ins, and a 14-day chart. Aggregate counts only |
-| **Production (v3)** | Postgres via `DATABASE_URL`, CORS from env, sign-in rate limiting (10 attempts / 5 min), security headers, Render blueprint, Vercel config |
-| **Import management (v3.6)** | Every import is a batch: undo a wrong file in one click (right after importing, or later from **Import history**). Importing overlapping files merges them and skips duplicates. Select several rows to delete at once, or delete all transactions (type DELETE to confirm) |
-| **Export (v2)** | Download the filtered transaction list as CSV |
-| UI | Dark and light themes, responsive down to phones, keyboard shortcut **N** to add a transaction, reduced-motion support |
-
-## ML components
-
-- **Categoriser:** TF-IDF character n-grams (2–4) + Logistic Regression, trained on 4,697 labelled Indian statement descriptions across 11 categories, with 6% realistic label noise. User corrections are stored and weighted into training when you click **Retrain now**.
-- **Forecaster:** Holt-Winters exponential smoothing per category on completed months, used only when a category has at least 6 months of data and isn't mostly empty. Otherwise, or if the optimiser fails to converge, a recency-weighted mean of the last 3 months is used; constant series (like fixed rent) are returned as-is. Anomalies are excluded.
-- **Anomaly detector:** Isolation Forest on log amount, category, weekday and amount relative to the category median; only flags spends at least 2.5× typical, so alerts stay trustworthy.
-- **Health score (0–100):** savings rate (40) + budgets on track (30) + spending stability (30).
-
-## Measured results (v1)
-
-| Parameter | Target | Measured |
-|---|---|---|
-| Categorisation accuracy (940 test samples) | ≥ 90% | 94.68% |
-| Macro F1 | ≥ 0.85 | 0.948 |
-| Inference per transaction | < 50 ms | ~1 ms |
-| Forecast MAPE (4 held-out months) | ≤ 20% | 3.63% |
-| Anomaly precision / recall | ≥ 80% / ≥ 75% | 92% / 92% |
-| CSV import + categorise, 500 rows | < 3 s | ~20–60 ms |
-| Dashboard API response (60-request load test) | < 500 ms | ~114 ms avg |
-| AI assistant response | < 5 s | ~2–8 ms (local NLP engine) |
-
-Exact values vary slightly by machine; the Metrics page shows the live numbers.
+---
 
 ## Project structure
+
 ```
-backend/
-  app/
-    main.py              app setup, timing middleware, startup training
-    db.py  auth.py  schemas.py  seed.py  services.py  metrics_store.py
-    ml/                  dataset, categorizer, analytics (forecast, anomalies, health), benchmarks
-    routers/             auth, transactions (+CSV), analytics (dashboard, budgets, insights), metrics
-    assistant_engine.py  NLP assistant: intent classifier, entity extraction, 21 answer handlers
-    manage.py            admin commands: stats, reset database, reset chats
-    statement_parser.py  CSV/Excel reader: header detection, column mapping, amounts in words
-    ml/ml_insights.py    K-Means segments, regression trends, variance drivers, what-if base
-  tests/test_api.py      42 API tests, run with and without pre-built artifacts and on PostgreSQL (incl. Metrics page readiness guard, background startup readiness, import undo and bulk delete, password change, forecast method selection, admin access control, data-poisoning guard, rate limiting, assistant intent understanding, Excel and PDF import, password PDFs, ML insights, user metrics, rate limit)
-frontend/
-  src/
-    pages/               Login, Dashboard, Transactions, Assistant, Budgets, Goals, Insights, Metrics
-    components/          UI kit, Layout, modals, toasts, CSV import, category picker
-    lib/                 api client, hooks, formatting, category colours/icons
+finsight/
+├── backend/
+│   ├── app/
+│   │   ├── main.py              Entry point, lifespan, middleware, rate limiting
+│   │   ├── db.py                SQLAlchemy models (users, transactions, budgets, goals, …)
+│   │   ├── auth.py              bcrypt + JWT, admin role
+│   │   ├── assistant_engine.py  Local NLP: intent classifier, entity extraction, 21 handlers
+│   │   ├── artifacts.py         Save/load pre-trained model files
+│   │   ├── build_artifacts.py   Build script (runs at deploy time)
+│   │   ├── statement_parser.py  CSV / Excel / PDF statement parsing
+│   │   ├── seed.py              Demo account with 6 months of realistic data
+│   │   ├── ml/
+│   │   │   ├── categorizer.py   TF-IDF + LR transaction classifier
+│   │   │   ├── analytics.py     Forecasting, anomaly detection, health score
+│   │   │   ├── benchmarks.py    Offline model evaluation
+│   │   │   └── ml_insights.py   K-Means clusters, linear trend detection
+│   │   └── routers/             FastAPI routers (auth, transactions, analytics, metrics, …)
+│   └── tests/test_api.py        42 API tests
+└── frontend/
+    └── src/
+        ├── pages/               Overview, Transactions, Assistant, Budgets, Goals, Insights, Metrics
+        └── components/          UI library, Layout, ImportCsv, ManageImports, ChangePassword, …
 ```
 
-## Phase 1 test log
+---
 
-| Found in testing | Fix |
-|---|---|
-| Dashboard API averaged 553 ms under load (target < 500 ms); every request re-fitted ~15 Holt-Winters models | Per-user result cache invalidated on any write → 114 ms under load, 15 ms warm |
-| Rent flagged "may go over" because a straight-line projection doubled a once-a-month payment | Separate projection for fixed bills (Rent, Bills, Education) |
-| Forecasts inflated by one-off purchases (₹24,999 Croma) | Anomalies excluded from forecasting |
-| Charts froze at a stale width on first load | `ChartBox` waits for the container size to settle before rendering |
-| Stat tiles showed ₹0 until scrolled into view | Count-up animation no longer waits for visibility |
-| Axis labels read "May 2026" instead of "May" | Tick formatter ignored the index argument |
-| No edit/delete on mobile | Rows open the edit sheet; delete added inside it |
-| Toasts rendered behind modal backdrop | Toasts moved to a portal above modals |
+## Built and Developed by
 
-## Phase 2 test log
+**Pavan Kumar** (Pindiprolu Phani Pavan Kumar)
 
-| Found in testing | Fix |
-|---|---|
-| Budgets, Insights and Metrics went blank when opened by clicking in the sidebar (worked after refresh; then Overview/Transactions went blank). The page transition waited for the old page's exit animation, which could stall in dev mode | Enter-only page transition plus an error boundary per page, so a page can never render blank silently. Verified by clicking through all pages 11 times on a demo and a brand-new account |
-| Assistant showed ISO dates ("2026-10-05") | Friendly dates ("5 Oct") |
-| Double focus ring on the chat input | Removed the inner outline |
-
-## Phase 3 test log
-
-| Found in testing | Fix |
-|---|---|
-| Bank CSVs with preamble rows lost every transaction (pandas dropped rows wider than the first line) | Rows read with `csv.reader` and padded to the widest row |
-| "Value Dt" column was treated as the amount, so a "Nil" row imported as ₹4 | Amount column ignored whenever Debit/Credit columns exist; "value" removed from amount synonyms |
-| "Rs. Three lakh…" not recognised (the full stop after "Rs") | Punctuation stripped before word-to-number parsing |
-| ML insights crashed with "NaN is not JSON compliant" for flat category histories | Regression output sanitised; NaN/inf become null |
-| Three clusters with medians ₹249/₹270/₹310 were named small/mid/large | Names now come from the feature that separates them (size, weekend share, time of month) |
-| Import dialog still rejected .xlsx files | File check accepts .csv, .xlsx, .xls, .xlsm; verified by uploading an ICICI-style Excel file in the browser |
-| Verified deployed topology locally: frontend built with `VITE_API_URL` on a different origin, backend CORS limited to that origin | All pages, import and API calls work cross-origin with no console errors |
-
-## Admin access
-Metrics are public in read-only form (model accuracy, benchmarks, latency, document targets), so recruiters and reviewers can see them. Controls and operational data are **admin-only**, enforced by the backend (403 for everyone else):
-
-| Admin-only | Why |
-|---|---|
-| Retrain model | Prevents data poisoning and CPU abuse. Training also ignores the shared demo account and caps each user at 50 corrections |
-| Run load test | Stops anyone flooding the server (all API calls are also rate-limited: 300/min per IP) |
-| Users section | Operational usage data |
-| Endpoint table | Internal route map |
-
-Set admins with `ADMIN_EMAILS` (comma-separated) in `backend/.env` locally, or in Render's environment. Sign up or sign in with that email and the Metrics page shows an **Admin** badge. Check with `python -m app.manage admins`.
-
-## Admin commands (run inside `backend`, with the server stopped)
-| Command | What it does |
-|---|---|
-| `python -m app.manage stats` | Row count for every table |
-| `python -m app.manage reset --yes` | Deletes **all** data (SQLite or Postgres) and recreates empty tables. The demo account returns on next start |
-| `python -m app.manage reset-chats --yes` | Deletes only assistant chat history |
-| `python -m app.manage reset-demo --yes` | Restores the shared demo account (if visitors changed or deleted its data) |
-| `python -m app.manage admins` | Shows which emails have admin access |
-| `python -m app.manage set-password EMAIL` | Sets a new password for an account (for forgotten passwords). Asks twice, hidden as you type |
-
-## Build step: pre-trained models
-Run `python -m app.build_artifacts` (Render does this in its build command) to train the models once and save them to `backend/artifacts/` (git-ignored, because they must be built with the same scikit-learn version that runs them). Without it, the server trains at startup instead, with identical results.
-
-## Fast startup on slow free-tier CPUs
-Training the ML model, seeding the demo account and warming caches all happen in a background task after the server has already opened its port, not before. This matters on Render's free plan (0.1 vCPU): without it, the whole sequence can take longer than Render's 5-minute port-scan timeout and the deploy fails. `GET /api/health` returns `"ready": false` for the few seconds this takes; the few endpoints that need the trained model (creating or importing a transaction, category suggestions, opening the demo account) return a friendly `503` with `Retry-After` during that window instead of erroring.
-
-## Database upgrades are automatic
-New columns (for example the user-activity fields in v3.1) are added to an existing `finsight.db` or Postgres database on startup, so existing data is kept. There's no need to delete the database when updating.
-
-## Roadmap
-- ✅ **Phase 2 (v2):** AI assistant, savings goals, recurring bills, notifications, CSV export.
-- ✅ **Phase 3 (v3):** ML insights, Excel and messy-statement import, production hardening, Vercel + Render deployment.
-- **Ideas beyond v3:** refresh tokens, PDF statement parsing (OCR), multi-currency, shared household budgets.
+[GitHub](https://github.com/pavankumar369-ML) · [LinkedIn](https://www.linkedin.com/in/pindiprolu-phani-pavan-kumar-236280385)
