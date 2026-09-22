@@ -62,11 +62,14 @@ function ReviewCard({ live, models, load }) {
   const rows = modelsReady ? [
     { name: "Categorisation accuracy", target: "≥ 90%", value: `${L.accuracy}%`, pass: L.accuracy >= 90, note: `${L.n_test} test samples` },
     { name: "Categorisation macro F1", target: "≥ 0.85", value: L.f1_macro.toFixed(3), pass: L.f1_macro >= 0.85 },
-    { name: "Inference time per transaction", target: "< 50 ms", value: ms(models.inference_ms), pass: models.inference_ms < 50, note: "measured just now" },
+    models.inference_ms == null
+      ? { name: "Inference time per transaction", target: "< 50 ms", value: "Loading model…", pass: null, note: "server just started" }
+      : { name: "Inference time per transaction", target: "< 50 ms", value: ms(models.inference_ms), pass: models.inference_ms < 50, note: "measured just now" },
     { name: "Forecast error (MAPE)", target: "≤ 20%", value: `${b.forecast.mape}%`, pass: b.forecast.mape <= 20, note: "4 held-out months" },
     { name: "Anomaly precision", target: "≥ 80%", value: `${b.anomaly.precision}%`, pass: b.anomaly.precision >= 80 },
     { name: "Anomaly recall", target: "≥ 75%", value: `${b.anomaly.recall}%`, pass: b.anomaly.recall >= 75 },
-    { name: "CSV import, 500 rows", target: "< 3 s", value: ms(b.csv_500?.ms), pass: (b.csv_500?.ms ?? 1e9) < 3000 },
+    b.csv_500 ? { name: "CSV import, 500 rows", target: "< 3 s", value: ms(b.csv_500.ms), pass: b.csv_500.ms < 3000 }
+      : { name: "CSV import, 500 rows", target: "< 3 s", value: "Loading model…", pass: null, note: "server just started" },
     { name: "Dashboard API response", target: "< 500 ms", value: dash !== null ? ms(dash) : "Open Overview", pass: dash === null ? null : dash < 500, note: dash !== null ? "live average" : "no calls in window yet" },
     (() => {
       const a = models.assistant;

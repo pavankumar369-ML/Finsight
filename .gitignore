@@ -6,3 +6,6 @@ __pycache__/
 venv/
 .venv/
 .env
+
+# pre-trained models are built on the server at deploy time (python -m app.build_artifacts)
+backend/artifacts/

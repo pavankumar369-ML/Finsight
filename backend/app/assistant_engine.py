@@ -275,6 +275,15 @@ CV_ACCURACY = (87.2, 4.5)   # (mean, std) %, 5-fold cross-validation -- see the 
 
 
 class IntentModel:
+    @classmethod
+    def from_artifact(cls, pipe, meta):
+        """Rebuild from a pre-trained pipeline (see app/artifacts.py) without re-training."""
+        m = cls.__new__(cls)
+        m.pipe = pipe
+        m.accuracy, m.accuracy_std = CV_ACCURACY
+        m.n_examples, m.n_intents, m.n_test = meta["n_examples"], meta["n_intents"], meta["n_test"]
+        return m
+
     def __init__(self):
         base = [(_normalise_for_training(p), intent) for intent, phrases in TRAIN.items() for p in phrases]
 
@@ -325,7 +334,9 @@ def get_intent_model():
     if _intent_model is None:
         with _intent_lock:
             if _intent_model is None:
-                _intent_model = IntentModel()
+                from . import artifacts
+                loaded = artifacts.load_joblib("intent")
+                _intent_model = IntentModel.from_artifact(*loaded) if loaded else IntentModel()
     return _intent_model
 
 
@@ -763,7 +774,10 @@ def answer(question, ctx: Ctx):
 
 
 def status():
-    m = get_intent_model()
-    return {"mode": "local", "model": "FinSight NLP engine", "intents": m.n_intents,
-            "intent_accuracy": m.accuracy, "intent_accuracy_std": m.accuracy_std,
-            "training_examples": m.n_examples, "base_phrases": m.n_test, "evaluation": "5-fold cross-validation"}
+    """Facts about the classifier. Computed from the training data, NOT by loading the model, so the
+    Metrics and Assistant pages can show them instantly even while the model is still loading."""
+    base = sum(len(v) for v in TRAIN.values())
+    return {"mode": "local", "model": "FinSight NLP engine", "intents": len(TRAIN),
+            "intent_accuracy": CV_ACCURACY[0], "intent_accuracy_std": CV_ACCURACY[1],
+            "training_examples": base * 3, "base_phrases": base, "evaluation": "5-fold cross-validation",
+            "loaded": _intent_model is not None}

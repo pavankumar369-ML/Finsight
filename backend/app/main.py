@@ -7,8 +7,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from .db import init_db, SessionLocal, ModelRun, Transaction, engine, DB_URL
 from .ml.categorizer import categorizer
-from .ml import benchmarks
-from . import metrics_store, state
+from . import metrics_store, state, artifacts
 from .routers import auth, transactions, analytics, metrics, goals, notifications, assistant
 from .seed import ensure_demo
 
@@ -19,26 +18,74 @@ async def _flusher():
         await asyncio.to_thread(metrics_store.flush)
 
 
+def _record_model_run(db, trigger, report):
+    """Store a ModelRun only when the metrics differ from the latest one, so restarts that load the
+    same pre-trained model don't pile identical rows into the training-run history chart."""
+    last = db.query(ModelRun).order_by(ModelRun.id.desc()).first()
+    if last and last.n_train == report["n_train"] and abs(last.accuracy - report["accuracy"]) < 1e-9 \
+            and last.n_corrections == report["n_corrections"]:
+        return
+    db.add(ModelRun(trigger=trigger, **report))
+    db.commit()
+
+
 def _warm_up_sync():
-    """Everything CPU-heavy: model training, demo seeding, benchmarks, cache warm-up.
-    Runs in a thread after the app has already started accepting requests, so a slow
-    free-tier CPU (e.g. Render's 0.1 vCPU) can't make the platform's port-scan time out."""
-    db = SessionLocal()
+    """Loads (or, if no pre-built artifact exists, trains) the ML models in a background thread,
+    after the server is already accepting requests. Every stage is logged with its timing, and the
+    whole thing is wrapped in try/except so a failure is visible in the logs instead of silently
+    leaving the app 'not ready' forever."""
+    log = logging.getLogger("uvicorn.error")
+    t0 = time.time()
+    stage = lambda msg: log.info("FinSight warm-up: %s (+%.1fs)", msg, time.time() - t0)
     try:
-        from .services import training_corrections
-        db.add(ModelRun(trigger="startup", **categorizer.train(training_corrections(db))))
-        db.commit()
-        demo = ensure_demo(db)
-        # warm the per-user cache so the first visitor (e.g. a recruiter waking a sleeping server) gets a fast dashboard
-        from .routers.analytics import dashboard, list_budgets, insights
-        for fn in (dashboard, list_budgets, insights):
-            fn(demo, db)
-    finally:
-        db.close()
-    metrics.BENCH.update(benchmarks.run_all())
-    from . import assistant_engine
-    assistant_engine.get_intent_model()   # pre-train the assistant's classifier too, not on the first user's question
-    state.READY = True
+        db = SessionLocal()
+        try:
+            from .services import training_corrections
+            corrections = training_corrections(db)
+            loaded = artifacts.load_joblib("categorizer")
+            if loaded:
+                report = categorizer.load(loaded[0], loaded[1]["report"])
+                stage("categoriser loaded from pre-built artifact")
+            else:
+                report = categorizer.train(corrections)
+                stage("categoriser trained (no artifact found)")
+            _record_model_run(db, "startup", report)
+            demo = ensure_demo(db)                    # instant if the demo account already exists
+            stage("demo account ready")
+        finally:
+            db.close()
+        from . import assistant_engine
+        assistant_engine.get_intent_model()           # loads the pre-built artifact, or trains if missing
+        stage("assistant intent model ready")
+        state.READY = True
+        stage("READY: all ML features available")
+
+        if loaded and corrections:
+            # the pre-built model has no user corrections; fold them in now, as startup always did
+            report = categorizer.train(corrections)
+            db = SessionLocal()
+            try:
+                _record_model_run(db, "startup", report)
+            finally:
+                db.close()
+            stage(f"categoriser retrained with {len(corrections)} user corrections")
+        if not metrics.BENCH.get("forecast"):
+            from .ml import benchmarks
+            metrics.BENCH.update(benchmarks.run_all())
+            stage("benchmarks computed (no artifact found)")
+        # warm the demo account's caches (read from the database cache, or computed and stored once)
+        db = SessionLocal()
+        try:
+            from .routers.analytics import dashboard, list_budgets, insights
+            demo = ensure_demo(db)
+            for fn in (dashboard, list_budgets, insights):
+                fn(demo, db)
+        finally:
+            db.close()
+        stage("demo dashboard cache warm")
+    except Exception:
+        log.exception("FinSight warm-up FAILED after %.1fs; ML-dependent actions will keep returning 503", time.time() - t0)
+        state.WARM_UP_ERROR = True
 
 
 @asynccontextmanager
@@ -50,6 +97,9 @@ async def lifespan(app: FastAPI):
     init_db()                    # fast: create/alter tables only
     log.info("FinSight startup: database ready in %.1fs", time.time() - t0)
     metrics_store.load_history()
+    bench = artifacts.load_json("benchmarks")    # tiny JSON read: Metrics benchmarks are available immediately
+    if bench:
+        metrics.BENCH.update(bench)
     task = asyncio.create_task(_flusher())
     warm = asyncio.create_task(asyncio.to_thread(_warm_up_sync))
     yield
@@ -58,7 +108,7 @@ async def lifespan(app: FastAPI):
     metrics_store.flush()
 
 
-app = FastAPI(title="FinSight API", version="3.7.5", lifespan=lifespan)
+app = FastAPI(title="FinSight API", version="3.8.0", lifespan=lifespan)
 ORIGINS = [o.strip().rstrip("/") for o in os.getenv("ALLOWED_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173").split(",") if o.strip()]
 app.add_middleware(CORSMiddleware, allow_origins=ORIGINS, allow_origin_regex=os.getenv("ALLOWED_ORIGIN_REGEX") or None,
                    allow_methods=["*"], allow_headers=["*"], expose_headers=["Content-Disposition"], max_age=600)
@@ -109,7 +159,8 @@ async def timing(request: Request, call_next):
 
 @app.get("/api/health")
 def health():
-    return {"ok": True, "model_ready": categorizer.pipe is not None, "ready": state.READY, "version": app.version,
+    return {"ok": True, "model_ready": categorizer.pipe is not None, "ready": state.READY,
+            "warm_up_error": state.WARM_UP_ERROR, "version": app.version,
             "database": "postgres" if not str(engine.url).startswith("sqlite") else "sqlite"}
 
 

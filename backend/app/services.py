@@ -1,4 +1,5 @@
 import threading
+from datetime import datetime
 from collections import defaultdict
 from .db import Transaction
 from .ml.analytics import detect_anomalies
@@ -16,17 +17,64 @@ def bump(user_id):
             del _cache[k]
 
 
-def cached(user_id, key, fn):
-    """Memoise expensive per-user computations (Holt-Winters fits) until that user's data changes."""
+def fingerprint(txns):
+    """Content hash of a user's transactions: any add, edit, delete or anomaly re-flag changes it."""
+    import hashlib
+    h = hashlib.sha1()
+    for t in sorted(txns, key=lambda t: t.id or 0):
+        h.update(f"{t.id}|{t.date}|{t.amount:.2f}|{t.type}|{t.category}|{int(bool(t.is_anomaly))}|{t.description}\n".encode())
+    return h.hexdigest()
+
+
+def cached(user_id, key, fn, txns=None):
+    """Memoise expensive per-user computations.
+
+    Without txns: in-memory only, invalidated by bump() on any write (fine for cheap things).
+    With txns: also persisted in the database under a fingerprint of the transactions, so after a
+    server restart the result is read back instead of recomputed (no statsmodels/sklearn import,
+    no model fitting). A changed fingerprint means the data changed, so it recomputes."""
+    import json
+    if txns is None:
+        with _lock:
+            ck = (user_id, _versions[user_id], key)
+            if ck in _cache:
+                return _cache[ck]
+        value = fn()
+        with _lock:
+            if len(_cache) > 2000:
+                _cache.clear()
+            _cache[(user_id, _versions[user_id], key)] = value
+        return value
+
+    fp = fingerprint(txns)
+    skey = json.dumps(key, default=str)[:80]
+    ck = (user_id, "fp", skey, fp)
     with _lock:
-        ck = (user_id, _versions[user_id], key)
         if ck in _cache:
             return _cache[ck]
-    value = fn()
+    from .db import SessionLocal, AnalyticsCache
+    db = SessionLocal()
+    try:
+        row = db.query(AnalyticsCache).filter(AnalyticsCache.user_id == user_id, AnalyticsCache.key == skey).first()
+        if row and row.fingerprint == fp:
+            value = json.loads(row.value)
+        else:
+            value = fn()
+            try:
+                payload = json.dumps(value, default=float)
+                if row:
+                    row.fingerprint, row.value, row.created_at = fp, payload, datetime.utcnow()
+                else:
+                    db.add(AnalyticsCache(user_id=user_id, key=skey, fingerprint=fp, value=payload))
+                db.commit()
+            except Exception:           # e.g. two requests racing on the unique key: the value is still correct
+                db.rollback()
+    finally:
+        db.close()
     with _lock:
         if len(_cache) > 2000:
             _cache.clear()
-        _cache[(user_id, _versions[user_id], key)] = value
+        _cache[ck] = value
     return value
 
 

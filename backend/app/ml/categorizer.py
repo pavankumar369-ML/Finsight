@@ -24,6 +24,13 @@ class Categorizer:
         self.last_report = None
         self._lock = threading.Lock()
 
+    def load(self, pipe, report):
+        """Install a pre-trained pipeline (see app/artifacts.py) instead of training at startup."""
+        with self._lock:
+            self.pipe = pipe
+        self.last_report = report
+        return report
+
     def train(self, corrections=None):
         """corrections: list of (description, category) from users. Returns a metrics report dict."""
         from sklearn.feature_extraction.text import TfidfVectorizer

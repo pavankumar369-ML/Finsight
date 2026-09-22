@@ -54,7 +54,7 @@ def live(window: int = Query(300, ge=60, le=3600), user: User = Depends(current_
 @router.get("/models")
 def models(user: User = Depends(current_user), db: Session = Depends(get_db)):
     runs = db.query(ModelRun).order_by(ModelRun.id.desc()).limit(12).all()
-    if "csv_500" not in BENCH:
+    if "csv_500" not in BENCH and categorizer.pipe is not None:
         BENCH["csv_500"] = csv_benchmark()
     txns = db.query(Transaction).filter(Transaction.user_id == user.id).all()
     exp = [t for t in txns if t.type == "expense" and not t.user_corrected]
@@ -62,19 +62,23 @@ def models(user: User = Depends(current_user), db: Session = Depends(get_db)):
     for t in exp:
         bins[min(int(t.confidence * 10), 9)] += 1
     from ..services import cached
-    fc = cached(user.id, ("forecast", date.today()), lambda: A.forecast(txns, date.today()))
+    fc = cached(user.id, ("forecast", A.month_key(date.today())), lambda: A.forecast(txns, date.today()), txns=txns)
     corrections = db.query(Transaction).filter(Transaction.user_corrected.is_(True)).count()
-    sample = [t.description for t in exp[:20]] or ["UPI/SWIGGY/VELLORE/123456"]
-    t0 = time.perf_counter()
-    for d in sample:
-        categorizer.predict([d])
-    inference_ms = (time.perf_counter() - t0) * 1000 / len(sample)
+    inference_ms = None
+    if categorizer.pipe is not None:        # still loading in the background right after a cold start
+        sample = [t.description for t in exp[:20]] or ["UPI/SWIGGY/VELLORE/123456"]
+        t0 = time.perf_counter()
+        for d in sample:
+            categorizer.predict([d])
+        inference_ms = (time.perf_counter() - t0) * 1000 / len(sample)
     return {
-        "ready": state.READY,   # frontend should show a loading state, not read benchmarks/latest, until this is true
+        # true once there is something to show: a stored training run plus benchmark numbers. Both come
+        # from the database / pre-built artifacts, so this is normally true right after a cold start.
+        "ready": bool(runs) and bool(BENCH.get("forecast")) and bool(BENCH.get("anomaly")),
         "latest": run_out(runs[0]) if runs else None,
         "history": [run_out(r) | {"confusion": None} for r in reversed(runs)],
         "confidence_histogram": [{"bucket": f"{i * 10}–{(i + 1) * 10}%", "count": c} for i, c in enumerate(bins)],
-        "inference_ms": round(inference_ms, 3),
+        "inference_ms": round(inference_ms, 3) if inference_ms is not None else None,
         "avg_confidence": round(sum(t.confidence for t in exp) / len(exp) * 100, 2) if exp else None,
         "pending_corrections": len(training_corrections(db)),
         "user": {"transactions": len(txns), "anomalies": sum(t.is_anomaly for t in txns),

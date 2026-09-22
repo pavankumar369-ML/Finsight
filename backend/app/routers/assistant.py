@@ -40,7 +40,7 @@ def chat(body: ChatIn, user: User = Depends(current_user), db: Session = Depends
     txns = db.query(Transaction).filter(Transaction.user_id == user.id).all()
     budgets = db.query(Budget).filter(Budget.user_id == user.id).all()
     goals = db.query(Goal).filter(Goal.user_id == user.id).all()
-    fc = cached(user.id, ("forecast", today), lambda: A.forecast(txns, today))
+    fc = cached(user.id, ("forecast", A.month_key(today)), lambda: A.forecast(txns, today), txns=txns)
     rec = cached(user.id, ("recurring", today), lambda: A.detect_recurring(txns, today))
     health = A.health_score(txns, budgets, today)
     r = AI.answer(body.message, AI.Ctx(txns, budgets, goals, fc, rec, health, today))

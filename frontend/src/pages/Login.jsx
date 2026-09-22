@@ -3,7 +3,7 @@ import { motion } from "motion/react";
 import { Navigate } from "react-router-dom";
 import { Sparkles } from "lucide-react";
 import { useAuth } from "../components/Auth";
-import { Button, Field, Input, Segmented } from "../components/ui";
+import { Button, Field, Input, PasswordInput, Segmented } from "../components/ui";
 import Logo from "../components/Logo";
 
 export default function Login() {
@@ -39,7 +39,7 @@ export default function Login() {
           <PacePreview />
         </div>
         <p className="text-[13px] text-faint">
-          Designed & built by Pavan Kumar · © 2026 FinSight · {" "}
+          Designed & built by Pavan Kumar · © 2026 FinSight ·{" "}
           <a href="https://github.com/pavankumar369-ML" target="_blank" rel="noopener noreferrer"
              className="font-semibold text-muted underline-offset-4 hover:text-accent hover:underline">GitHub</a>
           {" "}·{" "}
@@ -64,7 +64,7 @@ export default function Login() {
           <form onSubmit={submit} className="space-y-4" noValidate>
             {mode === "signup" && <Field label="Name"><Input value={form.name} onChange={set("name")} autoComplete="name" /></Field>}
             <Field label="Email"><Input type="email" value={form.email} onChange={set("email")} autoComplete="email" /></Field>
-            <Field label="Password"><Input type="password" value={form.password} onChange={set("password")} autoComplete={mode === "signin" ? "current-password" : "new-password"} /></Field>
+            <Field label="Password"><PasswordInput value={form.password} onChange={set("password")} autoComplete={mode === "signin" ? "current-password" : "new-password"} /></Field>
             {error && <motion.p initial={{ opacity: 0, x: -4 }} animate={{ opacity: 1, x: 0 }} role="alert" className="rounded-xl bg-coral-soft px-3 py-2 text-[13px] text-coral">{error}</motion.p>}
             <Button type="submit" size="lg" className="w-full" loading={busy === "form"}>{mode === "signin" ? "Sign in" : "Create account"}</Button>
           </form>

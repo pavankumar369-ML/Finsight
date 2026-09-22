@@ -25,7 +25,7 @@ Why not Firebase? FinSight's backend uses SQL through SQLAlchemy. Firebase is a 
    |---|---|
    | Root Directory | `backend` |
    | Runtime | Python 3 |
-   | Build Command | `pip install -r requirements.txt` |
+   | Build Command | `pip install -r requirements.txt && python -m app.build_artifacts` |
    | Start Command | `uvicorn app.main:app --host 0.0.0.0 --port $PORT` |
    | Instance type | Free |
 3. **Environment variables** (Advanced → Add Environment Variable):
@@ -55,6 +55,15 @@ Alternative: **New + → Blueprint** uses `render.yaml` from the repo and pre-fi
 From your laptop, point the reset command at the Neon database once (PowerShell):
 `$env:DATABASE_URL="<your Neon connection string>"; python -m app.manage reset --yes`
 Or in Neon's dashboard: **Branches → Reset from parent**, or run `DROP SCHEMA public CASCADE; CREATE SCHEMA public;` in the SQL Editor, then restart the Render service.
+
+## Fast cold starts (v3.8)
+Render's free tier sleeps after 15 minutes and runs on a very slow shared CPU. v3.8 makes waking up fast:
+- **Models are trained during the build, not at startup.** The build command runs `python -m app.build_artifacts`, which trains the categoriser and the assistant's classifier and runs the benchmarks on Render's fast build machine (about 3 seconds), saving them to `backend/artifacts/`. The server only loads them. Same data and random seeds, so identical accuracy (94.68%, F1 0.948, 87.2% intent, MAPE 3.63%, anomaly 92/92%).
+- **Forecasts and ML insights are stored in the database** (`analytics_cache` table), keyed by a fingerprint of each user's transactions. After a restart they're read back instead of recomputed; any change to the data recomputes them automatically.
+- **No pandas, scikit-learn, statsmodels or scipy at startup.** The dashboard's totals are plain Python (verified identical to the previous pandas version), and the ML libraries load in the background.
+- **The demo login no longer waits for the models**, since the demo account already exists in the database.
+
+If you skip the new build command, everything still works: the server trains at startup like before, just slower.
 
 ## If the Metrics page shows "This page hit an error" right after a cold start (fixed in v3.7.5)
 The Metrics page used to assume the model-quality data was fully loaded as soon as it got a response, but during the few seconds the background warm-up is still running, that response is empty. From v3.7.5 the page shows a clean "Warming up the models…" message (auto-refreshing) instead, and switches to the normal view the moment it's ready -- no refresh needed.

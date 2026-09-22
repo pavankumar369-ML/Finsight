@@ -1,7 +1,7 @@
-import { cloneElement, forwardRef, useEffect, useId, useRef, useState } from "react";
+import { cloneElement, forwardRef, isValidElement, useEffect, useId, useRef, useState } from "react";
 import { animate, motion } from "motion/react";
 import clsx from "clsx";
-import { AlertTriangle, Loader2 } from "lucide-react";
+import { AlertTriangle, Eye, EyeOff, Loader2 } from "lucide-react";
 
 export function Card({ className, children, as: As = "section", ...rest }) {
   return (
@@ -88,13 +88,30 @@ export function Select({ className, children, ...rest }) {
   );
 }
 
+/* The label is linked to its control with htmlFor/id rather than by wrapping it, so buttons inside a
+   control (e.g. the password eye) don't become part of the field's accessible name. The hint/error
+   text is linked with aria-describedby instead of being read as part of the label. */
 export function Field({ label, error, children, hint }) {
+  const auto = useId();
+  if (!isValidElement(children)) {
+    return (
+      <label className="block">
+        <span className="mb-1.5 block text-[13px] font-semibold text-muted">{label}</span>
+        {children}
+        {error ? <span className="mt-1 block text-[12px] text-coral">{error}</span> : hint && <span className="mt-1 block text-[12px] text-faint">{hint}</span>}
+      </label>
+    );
+  }
+  const id = children.props.id ?? auto;
+  const noteId = `${id}-note`;
+  const note = error || hint;
   return (
-    <label className="block">
-      <span className="mb-1.5 block text-[13px] font-semibold text-muted">{label}</span>
-      {children}
-      {error ? <span className="mt-1 block text-[12px] text-coral">{error}</span> : hint && <span className="mt-1 block text-[12px] text-faint">{hint}</span>}
-    </label>
+    <div className="block">
+      <label htmlFor={id} className="mb-1.5 block text-[13px] font-semibold text-muted">{label}</label>
+      {cloneElement(children, { id, "aria-describedby": note ? noteId : undefined, "aria-invalid": error ? true : undefined })}
+      {error ? <span id={noteId} className="mt-1 block text-[12px] text-coral">{error}</span>
+        : hint && <span id={noteId} className="mt-1 block text-[12px] text-faint">{hint}</span>}
+    </div>
   );
 }
 
@@ -229,3 +246,21 @@ export function PageHeader({ title, subtitle, actions }) {
     </div>
   );
 }
+
+/* Password field with a show/hide eye button. The button is type="button" so it never submits
+   the form, and tabIndex=-1 keeps Tab moving straight from the password to the submit button. */
+export const PasswordInput = forwardRef(function PasswordInput({ className, ...rest }, ref) {
+  const [show, setShow] = useState(false);
+  const Icon = show ? EyeOff : Eye;
+  return (
+    <div className="relative">
+      <input ref={ref} type={show ? "text" : "password"}
+        className={clsx("h-10 w-full rounded-xl border border-line bg-surface-2 pl-3 pr-10 text-sm text-text placeholder:text-faint transition-colors focus:border-accent focus:outline-none", className)} {...rest} />
+      <button type="button" tabIndex={-1} onClick={() => setShow((s) => !s)}
+        aria-label={show ? "Hide password" : "Show password"} title={show ? "Hide password" : "Show password"}
+        className="absolute right-1.5 top-1/2 grid h-7 w-7 -translate-y-1/2 place-items-center rounded-lg text-faint transition-colors hover:bg-raised hover:text-text">
+        <Icon size={16} />
+      </button>
+    </div>
+  );
+});

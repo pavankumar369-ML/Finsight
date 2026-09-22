@@ -2,11 +2,11 @@
 Uses the same seed and call order as the prototype evaluation reported in the project document."""
 import time
 import numpy as np
-import pandas as pd
 # sklearn/statsmodels imported inside run_all() -- see the note in categorizer.py
 
 
 def run_all():
+    import pandas as pd
     from sklearn.ensemble import IsolationForest
     from sklearn.metrics import precision_score, recall_score
     np.random.seed(42)

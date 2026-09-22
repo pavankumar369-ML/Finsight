@@ -101,6 +101,20 @@ class ChatMessage(Base):
     ts = Column(DateTime, default=datetime.utcnow)
 
 
+class AnalyticsCache(Base):
+    """Persisted results of expensive per-user computations (forecasts, ML insights), keyed by a
+    fingerprint of the user's transactions. Survives server restarts, so a cold free-tier server
+    can serve the dashboard without re-importing statsmodels/scikit-learn or re-fitting models."""
+    __tablename__ = "analytics_cache"
+    __table_args__ = (UniqueConstraint("user_id", "key"),)
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, index=True, nullable=False)
+    key = Column(String(80), nullable=False)
+    fingerprint = Column(String(40), nullable=False)
+    value = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
 class RequestLog(Base):
     __tablename__ = "request_logs"
     id = Column(Integer, primary_key=True)

@@ -45,7 +45,13 @@ def login(body: LoginIn, db: Session = Depends(get_db)):
 
 
 @router.post("/demo")
-def demo(db: Session = Depends(get_db), _=Depends(require_ready)):
+def demo(db: Session = Depends(get_db)):
+    from ..seed import DEMO_EMAIL
+    from ..state import READY
+    # The demo account lives in the database, so once it exists signing in needs no ML at all.
+    # Only the very first run (creating and categorising the demo data) must wait for the model.
+    if not READY and not db.query(User).filter(User.email == DEMO_EMAIL).first():
+        require_ready()
     user = ensure_demo(db)
     _record(db, user, "demo")
     return _out(user)

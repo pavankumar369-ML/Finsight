@@ -5,7 +5,6 @@ amounts like '₹1,250.00 Dr', '(500)', 'Nil', or even words ('two thousand five
 Excel serial dates and summary rows such as 'Opening Balance'. This module normalises all of that."""
 import csv, io, re
 from datetime import datetime, timedelta
-import pandas as pd
 
 MAX_ROWS = 20000
 
@@ -82,6 +81,7 @@ def parse_amount(value):
 
 
 def parse_date(value):
+    import pandas as pd   # imported lazily: only statement imports need it
     if value is None:
         return None
     s = str(value).strip()
@@ -105,9 +105,10 @@ DATE_START = re.compile(r"^\s*(\d{1,2}[/\-. ](?:\d{1,2}|[A-Za-z]{3})[/\-. ]\d{2,
 AMOUNT_TOKEN = re.compile(r"\(?-?(?:₹|rs\.?|inr)?\s*\d[\d,]*(?:\.\d{1,2})?\)?(?:\s*(?:dr|cr))?", re.I)
 
 
-def read_pdf(raw: bytes, password: str | None = None) -> pd.DataFrame:
+def read_pdf(raw: bytes, password: str | None = None):
     """Text PDFs: use the tables pdfplumber detects on every page; fall back to reading text lines
     that start with a date. Scanned (image-only) PDFs have no text and are rejected with a clear message."""
+    import pandas as pd   # imported lazily: only statement imports need it
     import pdfplumber
     from pdfminer.pdfdocument import PDFPasswordIncorrect
     try:
@@ -158,8 +159,9 @@ def read_pdf(raw: bytes, password: str | None = None) -> pd.DataFrame:
     return pd.DataFrame([["Date", "Description", "Amount"]] + parsed, dtype=str)
 
 
-def read_table(raw: bytes, filename: str, password: str | None = None) -> pd.DataFrame:
+def read_table(raw: bytes, filename: str, password: str | None = None):
     """Reads the first sheet/table as strings, with no header assumptions."""
+    import pandas as pd   # imported lazily: only statement imports need it
     name = (filename or "").lower()
     if name.endswith(".pdf"):
         df = read_pdf(raw, password)

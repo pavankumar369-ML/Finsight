@@ -2,6 +2,7 @@
 from fastapi import HTTPException
 
 READY = False   # flipped true by main.py once the model is trained and the demo account is seeded
+WARM_UP_ERROR = False   # set if the background warm-up raised; reported by /api/health
 
 
 def require_ready():

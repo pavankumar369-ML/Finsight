@@ -3,7 +3,8 @@ import calendar, math, warnings
 from collections import defaultdict
 from datetime import date
 import numpy as np
-import pandas as pd
+# pandas is deliberately NOT used here: these aggregations are simple sums, and importing pandas
+# costs seconds on a throttled free-tier CPU just to render the dashboard.
 
 
 
@@ -11,11 +12,12 @@ def month_key(d: date) -> str:
     return f"{d.year}-{d.month:02d}"
 
 
-def monthly_frame(txns):
-    if not txns:
-        return pd.DataFrame(columns=["month", "type", "category", "amount"])
-    return pd.DataFrame([{"month": month_key(t.date), "type": t.type, "category": t.category,
-                          "amount": t.amount} for t in txns])
+def _sums(txns, key):
+    """Sum amounts grouped by key(t) -> {group: total}. Plain-Python replacement for a pandas groupby."""
+    out = defaultdict(float)
+    for t in txns:
+        out[key(t)] += t.amount
+    return out
 
 
 MIN_MONTHS_FOR_HW = 6      # damped Holt-Winters estimates ~4 parameters; fewer points than this is an unreliable fit
@@ -64,20 +66,22 @@ def _forecast_series(values):
 def forecast(txns, today: date):
     """Forecast next month's spend per category using complete past months."""
     # anomalies are one-off events; leaving them in would drag every future forecast upward
-    df = monthly_frame([t for t in txns if t.type == "expense" and not t.is_anomaly])
+    exp = [t for t in txns if t.type == "expense" and not t.is_anomaly]
     current = month_key(today)
-    if df.empty:
+    if not exp:
         return {"month": None, "total": 0, "categories": [], "history": [], "backtest_mape": None}
-    past = df[df["month"] < current]
-    months = sorted(past["month"].unique())
-    pivot = past.pivot_table(index="month", columns="category", values="amount", aggfunc="sum").reindex(months).fillna(0)
+    past = [t for t in exp if month_key(t.date) < current]
+    months = sorted({month_key(t.date) for t in past})
+    by = _sums(past, lambda t: (t.category, month_key(t.date)))
+    categories = sorted({t.category for t in past})            # pandas pivot orders columns alphabetically
+    series = {c: [by.get((c, m), 0.0) for m in months] for c in categories}
     cats = []
-    for cat in pivot.columns:
-        f, method = _forecast_series(pivot[cat].tolist())
+    for cat in categories:
+        f, method = _forecast_series(series[cat])
         cats.append({"category": cat, "forecast": round(f, 2), "method": method,
-                     "last": round(float(pivot[cat].iloc[-1]), 2) if len(pivot) else 0})
+                     "last": round(float(series[cat][-1]), 2) if months else 0})
     cats.sort(key=lambda c: -c["forecast"])
-    totals = pivot.sum(axis=1).tolist()
+    totals = [sum(series[c][i] for c in categories) for i in range(len(months))]
     total_f, _ = _forecast_series(totals)
     # backtest: predict the last complete month from the months before it
     mape = None
@@ -120,21 +124,20 @@ def detect_anomalies(txns):
 
 
 def health_score(txns, budgets, today: date):
-    df = monthly_frame(txns)
-    if df.empty:
+    if not txns:
         return {"score": 0, "parts": []}
     current = month_key(today)
-    past = df[df["month"] < current]
-    use = past if not past.empty else df
-    inc = use[use["type"] == "income"].groupby("month")["amount"].sum()
-    exp = use[use["type"] == "expense"].groupby("month")["amount"].sum()
-    months = sorted(set(inc.index) | set(exp.index))[-6:]
+    past = [t for t in txns if month_key(t.date) < current]
+    use = past if past else txns
+    inc = _sums([t for t in use if t.type == "income"], lambda t: month_key(t.date))
+    exp = _sums([t for t in use if t.type == "expense"], lambda t: month_key(t.date))
+    months = sorted(set(inc) | set(exp))[-6:]
     inc_t = sum(inc.get(m, 0) for m in months)
     exp_t = sum(exp.get(m, 0) for m in months)
     savings_rate = (inc_t - exp_t) / inc_t if inc_t else 0
     s1 = max(0.0, min(1.0, savings_rate / 0.30)) * 40
 
-    cur = df[(df["month"] == current) & (df["type"] == "expense")].groupby("category")["amount"].sum()
+    cur = _sums([t for t in txns if t.type == "expense" and month_key(t.date) == current], lambda t: t.category)
     if budgets:
         ok = sum(1 for b in budgets if cur.get(b.category, 0) <= b.monthly_limit)
         adherence = ok / len(budgets)
@@ -169,21 +172,21 @@ def pace(txns, budgets, today: date):
 def rule_50_30_20(txns, today: date):
     needs = {"Rent", "Bills", "Groceries", "Health", "Education", "Transport"}
     wants = {"Food", "Shopping", "Entertainment", "Others"}
-    df = monthly_frame(txns)
     cur = month_key(today)
-    past = df[df["month"] < cur]
-    months = sorted(past["month"].unique())[-3:]
+    past = [t for t in txns if month_key(t.date) < cur]
+    months = sorted({month_key(t.date) for t in past})[-3:]
     if not months:
         return None
-    p = past[past["month"].isin(months)]
-    income = p[p["type"] == "income"]["amount"].sum() / len(months)
-    e = p[p["type"] == "expense"]
-    n = e[e["category"].isin(needs)]["amount"].sum() / len(months)
-    w = e[e["category"].isin(wants)]["amount"].sum() / len(months)
-    t = e[e["category"] == "Transfers"]["amount"].sum() / len(months)
-    s = income - n - w - t
+    ms = set(months)
+    p = [t for t in past if month_key(t.date) in ms]
+    income = sum(t.amount for t in p if t.type == "income") / len(months)
+    e = [t for t in p if t.type == "expense"]
+    n = sum(t.amount for t in e if t.category in needs) / len(months)
+    w = sum(t.amount for t in e if t.category in wants) / len(months)
+    tr = sum(t.amount for t in e if t.category == "Transfers") / len(months)
+    s = income - n - w - tr
     return {"income": round(income, 2),
-            "actual": {"needs": round(n, 2), "wants": round(w + t, 2), "savings": round(s, 2)},
+            "actual": {"needs": round(n, 2), "wants": round(w + tr, 2), "savings": round(s, 2)},
             "ideal": {"needs": round(income * .5, 2), "wants": round(income * .3, 2), "savings": round(income * .2, 2)}}
 
 
@@ -235,12 +238,13 @@ def detect_recurring(txns, today: date):
 
 
 def avg_monthly_savings(txns, today: date, months=3):
-    df = monthly_frame(txns)
-    if df.empty:
+    if not txns:
         return 0.0
-    past = df[df["month"] < month_key(today)]
-    ms = sorted(past["month"].unique())[-months:]
+    cur = month_key(today)
+    past = [t for t in txns if month_key(t.date) < cur]
+    ms = sorted({month_key(t.date) for t in past})[-months:]
     if not ms:
         return 0.0
-    p = past[past["month"].isin(ms)]
-    return float((p[p["type"] == "income"]["amount"].sum() - p[p["type"] == "expense"]["amount"].sum()) / len(ms))
+    keep = set(ms)
+    p = [t for t in past if month_key(t.date) in keep]
+    return float((sum(t.amount for t in p if t.type == "income") - sum(t.amount for t in p if t.type == "expense")) / len(ms))

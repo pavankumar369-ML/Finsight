@@ -1,6 +1,5 @@
 import io, time
 from datetime import date
-import pandas as pd
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query
 from fastapi.responses import PlainTextResponse
 from sqlalchemy import or_, func

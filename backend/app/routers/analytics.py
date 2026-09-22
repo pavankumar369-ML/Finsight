@@ -75,7 +75,7 @@ def dashboard(user: User = Depends(current_user), db: Session = Depends(get_db))
 
     recent = sorted(txns, key=lambda t: (t.date, t.id), reverse=True)[:7]
     anomalies = sorted([t for t in txns if t.is_anomaly], key=lambda t: t.date, reverse=True)[:4]
-    fc = cached(user.id, ("forecast", today), lambda: A.forecast(txns, today))
+    fc = cached(user.id, ("forecast", A.month_key(today)), lambda: A.forecast(txns, today), txns=txns)
     return {
         "today": today.isoformat(),
         "pace": A.pace(txns, budgets, today),
@@ -100,7 +100,7 @@ def list_budgets(user: User = Depends(current_user), db: Session = Depends(get_d
     txns, budgets = _load(db, user)
     cur = A.month_key(today)
     days = calendar.monthrange(today.year, today.month)[1]
-    fc = {c["category"]: c["forecast"] for c in cached(user.id, ("forecast", today), lambda: A.forecast(txns, today))["categories"]}
+    fc = {c["category"]: c["forecast"] for c in cached(user.id, ("forecast", A.month_key(today)), lambda: A.forecast(txns, today), txns=txns)["categories"]}
     spent = defaultdict(float)
     for t in txns:
         if t.type == "expense" and A.month_key(t.date) == cur:
@@ -153,7 +153,7 @@ def delete_budget(budget_id: int, user: User = Depends(current_user), db: Sessio
 def insights(user: User = Depends(current_user), db: Session = Depends(get_db)):
     today = date.today()
     txns, budgets = _load(db, user)
-    fc = cached(user.id, ("forecast", today), lambda: A.forecast(txns, today))
+    fc = cached(user.id, ("forecast", A.month_key(today)), lambda: A.forecast(txns, today), txns=txns)
     health = A.health_score(txns, budgets, today)
     rule = A.rule_50_30_20(txns, today)
     limits = {b.category: b.monthly_limit for b in budgets}
@@ -194,6 +194,6 @@ def ml_insights(user: User = Depends(current_user), db: Session = Depends(get_db
     from ..db import Goal
     today = date.today()
     txns, _ = _load(db, user)
-    data = cached(user.id, ("ml_insights", today), lambda: MI.build(txns, today))
+    data = cached(user.id, ("ml_insights", A.month_key(today)), lambda: MI.build(txns, today), txns=txns)
     goals = db.query(Goal).filter(Goal.user_id == user.id).all()
     return {**data, "goals": [{"name": g.name, "emoji": g.emoji, "remaining": round(max(g.target - g.saved, 0), 2)} for g in goals if g.saved < g.target]}
