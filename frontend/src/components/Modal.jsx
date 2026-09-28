@@ -5,15 +5,20 @@ import { X } from "lucide-react";
 
 export default function Modal({ open, onClose, title, subtitle, children, width = 520 }) {
   const panel = useRef(null);
+  // Keep the latest onClose in a ref so the effect below runs only when the dialog opens or closes.
+  // Parents often pass a new onClose function on every render (e.g. an inline arrow); if the effect
+  // depended on it, every keystroke would re-run it and yank focus back to the first field.
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
   useEffect(() => {
     if (!open) return;
     const prev = document.activeElement;
-    const onKey = (e) => { if (e.key === "Escape") onClose(); };
+    const onKey = (e) => { if (e.key === "Escape") onCloseRef.current(); };
     document.addEventListener("keydown", onKey);
     document.body.style.overflow = "hidden";
-    setTimeout(() => panel.current?.querySelector("input, select, textarea, button:not([data-close])")?.focus(), 60);
-    return () => { document.removeEventListener("keydown", onKey); document.body.style.overflow = ""; prev?.focus?.(); };
-  }, [open, onClose]);
+    const t = setTimeout(() => panel.current?.querySelector("input, select, textarea, button:not([data-close])")?.focus(), 60);
+    return () => { clearTimeout(t); document.removeEventListener("keydown", onKey); document.body.style.overflow = ""; prev?.focus?.(); };
+  }, [open]);
   return createPortal(
     <AnimatePresence>
       {open && (
