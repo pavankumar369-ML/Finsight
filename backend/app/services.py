@@ -7,6 +7,7 @@ from .ml.analytics import detect_anomalies
 # Per-user data version. Any write bumps it, which invalidates cached model outputs for that user.
 _versions = defaultdict(int)
 _cache = {}
+_inflight = {}   # (user_id, cache key) -> lock, so one request computes and the rest wait
 _lock = threading.Lock()
 
 
@@ -52,6 +53,20 @@ def cached(user_id, key, fn, txns=None):
     with _lock:
         if ck in _cache:
             return _cache[ck]
+        flight = _inflight.setdefault((user_id, skey), threading.Lock())
+    # Single-flight: after a write, the dashboard, budgets, insights and notifications all ask for the
+    # same forecast at the same moment. Without this, each request recomputed it in parallel, and on a
+    # slow free-tier CPU that duplicated work left every page waiting. Now the first request computes
+    # it and the others wait for that result, then read it from the cache.
+    with flight:
+        with _lock:
+            if ck in _cache:
+                return _cache[ck]
+        return _cached_persisted(user_id, skey, ck, fp, fn)
+
+
+def _cached_persisted(user_id, skey, ck, fp, fn):
+    import json
     from .db import SessionLocal, AnalyticsCache
     db = SessionLocal()
     try:

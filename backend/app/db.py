@@ -7,6 +7,11 @@ from sqlalchemy.orm import declarative_base, sessionmaker
 DB_URL = os.getenv("DATABASE_URL") or os.getenv("FINSIGHT_DB", "sqlite:///./finsight.db")
 if DB_URL.startswith("postgres://"):          # Render/Neon/Heroku style URLs
     DB_URL = DB_URL.replace("postgres://", "postgresql://", 1)
+if DB_URL.startswith("postgresql://"):
+    # Name the driver explicitly. SQLAlchemy 2.1 changed the default PostgreSQL driver from psycopg2
+    # to psycopg (v3); without this, a fresh deploy that installs 2.1 looks for a driver that isn't
+    # installed and the server fails to start.
+    DB_URL = DB_URL.replace("postgresql://", "postgresql+psycopg2://", 1)
 if DB_URL.startswith("sqlite"):
     engine = create_engine(DB_URL, connect_args={"check_same_thread": False})
 else:

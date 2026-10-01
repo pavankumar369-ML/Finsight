@@ -1,6 +1,6 @@
 fastapi>=0.110
 uvicorn[standard]>=0.29
-SQLAlchemy>=2.0
+SQLAlchemy>=2.0,<2.2
 PyJWT>=2.7
 bcrypt>=4.0
 python-multipart>=0.0.9

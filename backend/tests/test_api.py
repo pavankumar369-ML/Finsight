@@ -207,7 +207,8 @@ def test_assistant_understands_varied_questions(client, demo):
         assert r["intent"] == intent, (q, r["intent"])
         if cat and intent != "spend_merchant":
             assert r["entities"]["category"] == cat, (q, r["entities"])
-        assert "₹" in r["assistant"]["content"] or intent in ("health", "weekday", "anomalies"), q
+        # budget_status can legitimately have no amount (e.g. on the 1st of a month, before any spending)
+        assert "₹" in r["assistant"]["content"] or intent in ("health", "weekday", "anomalies", "budget_status"), q
         assert r["suggestions"], q
     off = client.post("/api/assistant/chat", headers=demo, json={"message": "what is the weather today"}).json()
     assert off["intent"] == "unknown"
@@ -488,3 +489,25 @@ def test_health_and_root_answer_head_requests(client):
         g = client.get(path)
         h = client.request("HEAD", path)
         assert h.status_code == g.status_code == 200 and h.content == b""
+
+
+def test_cache_computes_once_for_concurrent_requests():
+    """After a write, several pages request the same forecast at once; it must be computed only once."""
+    import threading, time
+    from app.services import cached
+
+    class T:
+        def __init__(s, i): s.id, s.date, s.amount, s.type, s.category, s.is_anomaly, s.description = i, "2026-09-01", 1.0, "expense", "Food", False, "x"
+    txns = [T(i) for i in range(5)]
+    calls = []
+
+    def slow():
+        calls.append(1)
+        time.sleep(0.3)
+        return {"v": 42}
+
+    out = []
+    threads = [threading.Thread(target=lambda: out.append(cached(987654, ("single-flight-test",), slow, txns=txns))) for _ in range(4)]
+    [t.start() for t in threads]
+    [t.join() for t in threads]
+    assert len(calls) == 1 and out == [{"v": 42}] * 4
